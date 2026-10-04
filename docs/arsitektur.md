@@ -248,10 +248,11 @@ Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 (`pickVariant`, `shapeProblems`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 358 assertion berjalan dalam 0,24 detik
-(`tests/run.luau`). Untuk game yang aturan menang-kalahnya serumit PRD §5
-(tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank S/A/B/C), itu
-perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio tiap kali".
+Studio dan tanpa Roblox.** 566 assertion berjalan dalam waktu di bawah satu
+detik (`tests/run.luau`, 15 berkas spec). Untuk game yang aturan menang-kalahnya
+serumit PRD §5 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank
+S/A/B/C), itu perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio
+tiap kali".
 
 Pola yang dipakai untuk mencapai ini: **kebijakan masuk sebagai argumen, bukan
 sebagai `require`.** Contoh konkret:
@@ -362,19 +363,43 @@ Semua perintah dijalankan dari akar repo.
 
 ### Sudah dibuktikan
 
+Semua perintah di bawah dijalankan pada commit `80b35e9` (kepala `main`),
+2026-10-04, dengan perintah yang **sama persis** dengan `.github/workflows/ci.yml`.
+Keluaran verbatim ada di `docs/rilis.md` bagian 1.
+
 | Perintah | Hasil |
 |---|---|
-| `lune run tests/run.luau` | **358 assertion, 0 gagal** — 12 berkas spec |
-| `selene src tests` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
+| `lune run tests/run.luau` | **566 assertion, 0 gagal** — 15 berkas spec |
+| `selene --config selene.toml .` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
+| `stylua --config-path stylua.toml --check .` | **bersih** (exit 0) |
 | `luau-analyze --mode=strict` atas 13 modul murni | **0 diagnostik** |
-| `stylua --check src tests` | **bersih** (exit 0) |
-| `rojo build -o build.rbxlx` | **berhasil** |
+| `rojo build -o build-candidate.rbxlx` | **berhasil** — 200.771 byte |
+| `lune run tools/validate_case.luau -- data/cases/gallery_01.json` | **LULUS** — 0 errors, 0 warnings |
 
-Hasil `rojo build` juga diperiksa isinya, bukan cuma status keluarnya: pohon
-yang dihasilkan benar — `ReplicatedStorage.Shared` berisi 4 ModuleScript,
-`ServerScriptService.Server` adalah `Script` dengan 8 ModuleScript anak,
-`ServerStorage.Cases` berisi `gallery_01`, `StarterPlayerScripts.Client` adalah
-`LocalScript` dengan `Hud` dan `NetClient`.
+Tabel ini dulu mencantumkan 358 assertion dan `selene src tests`; keduanya
+usang. Angka dan perintah di atas yang berlaku, dan `docs/rilis.md` bagian 1
+adalah sumber keluaran mentahnya.
+
+Hasil `rojo build` juga diperiksa isinya, bukan cuma status keluarnya. Pohon
+yang dihasilkan dari `default.project.json`:
+
+```
+ReplicatedStorage.Shared          Folder
+  Config, Net, PingPhrases, PuzzleTable, Roles   ModuleScript
+  case/                            Folder
+    CaseGraph, CaseLoader, CaseValidator, Compat  ModuleScript
+ServerScriptService.Server         Script (9 ModuleScript anak)
+  AccusationService, CaseLoader, ClueGraph, DeductionEngine,
+  Matchmaking, NPCController, PuzzleTableService, RoleAssignment,
+  TelemetryService
+ServerStorage.Cases.gallery_01     ModuleScript
+StarterPlayer.StarterPlayerScripts.Client  LocalScript
+  Hud/ (PingWheel), NetClient, Table          ModuleScript
+```
+
+Total 23 `ModuleScript`, 1 `Script`, 1 `LocalScript`, 3 `Folder`. Tidak ada
+`rbxassetid` nyata di pohon ini: `Table.SHEET` masih `rbxassetid://0`, jadi
+place ini tidak akan menampilkan gambar puzzle sampai sheet-nya diunggah.
 
 ### Batas verifikasi yang harus dinyatakan jujur
 

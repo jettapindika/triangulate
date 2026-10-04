@@ -1,6 +1,8 @@
 # Triangulate
 
-Co-op Puzzle Mystery (working title) — game co-op asimetris 3 pemain di Roblox.
+Triangulate — game misteri co-op asimetris 3 pemain di Roblox, arah visual
+detective noir. Nama dan arah visual dikunci owner (EXTA-31); rujukan keputusan
+ada di `docs/decision-log.md`.
 
 - PRD: `docs/prd-v0.2.md`
 - Spesifikasi otomasi (usulan, belum diaktifkan): `docs/automation-spec.md`
@@ -75,10 +77,14 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau        # 358 assertion
-selene src tests               # lint
-stylua --check src tests       # format
+lune run tests/run.luau                        # 566 assertion, 15 berkas spec
+selene --config selene.toml .                  # lint
+stylua --config-path stylua.toml --check .     # format
 ```
+
+Perintahnya sama persis dengan yang dijalankan CI (`.github/workflows/ci.yml`),
+supaya hasil lokal dan hasil pipeline tidak pernah berbeda aturan. Rincian
+keluaran terakhir ada di `docs/rilis.md` bagian 1.
 
 Batasnya: `luau-analyze` yang berdiri sendiri tidak punya definisi API Roblox,
 jadi ia hanya bisa memeriksa modul murni:
@@ -116,12 +122,18 @@ nomor minggunya:
 
 | Belum | Minggu (PRD §17) |
 |---|---|
-| Meja puzzle top-down, drag-and-snap | 1 |
+| Meja puzzle top-down, drag-and-snap | 1 — **sudah ada** (EXTA-53) |
 | Lokasi, objek, kunci, rantai A→bukti end to end | 2 |
 | Clue board Director, kombinasi, pinpoint | 3 |
 | Tuduhan + batas percobaan (logikanya sudah ada, UI-nya belum) | 4 |
 | Lobby lengkap, preferensi role, NPC, AFK/rejoin | 5 |
 | Case 0, story case #1, ping wheel final | 6 |
 
+Status tiap butir MVP P0 beserta buktinya ada di `docs/rilis.md` bagian 2.
 Daftar lengkap utang teknis beserta risikonya ada di `docs/arsitektur.md`
 bagian 9.
+
+## Dokumen rilis
+
+- Ceklis rilis dan status MVP P0: `docs/rilis.md`
+- Draf kuesioner maturity Roblox (belum dikirim): `docs/kuesioner-maturity-roblox.md`
