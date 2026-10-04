@@ -43,6 +43,16 @@ local NPCController = require(script.NPCController)
 local TelemetryService = require(script.TelemetryService)
 local PuzzleTableService = require(script.PuzzleTableService)
 
+-- `kamus-metrik.md` §0.2 mewajibkan `t_server_ms` untuk seluruh perhitungan
+-- metrik, sedangkan `os.clock()` -- sumber waktu yang sudah dipakai berkas ini
+-- untuk lobby dan rank -- mengembalikan DETIK. Konversi dilakukan di satu
+-- fungsi ini supaya tidak ada cap waktu yang diam-diam bercampur satuan;
+-- `TelemetryService` memakai `BUCKET_MS = 1000`, jadi detik yang lolos apa
+-- adanya akan menaruh seluruh sesi di satu bucket dan melaporkan idle 0%.
+local function telemetryMs(): number
+	return os.clock() * 1000
+end
+
 -- `NPCController` dipakai di `startSession` untuk menghitung role mana yang
 -- diisi NPC (PRD §8). Yang BELUM ada adalah loop yang menjalankan aksinya --
 -- `nextAction`, takeover AFK, dan rejoin adalah deliverable minggu 5 (PRD §17),
@@ -771,6 +781,19 @@ local function startSession(): ()
 
 	local world = buildWorld(locationService)
 
+	-- `kamus-metrik.md` §0.2: titik nol semua durasi adalah
+	-- `case_started.t_server_ms`. Di scaffold ini lobby dan ready check belum
+	-- berjalan (PRD §8, minggu 5), jadi kasus mulai tepat saat sesi dibuat dan
+	-- satu cap waktu mewakili keduanya. Minggu 5 tinggal memanggil
+	-- `TelemetryService.markCaseStarted(session.telemetry, telemetryMs())` saat
+	-- kasus benar-benar mulai, dan angka lama tidak perlu dihitung ulang.
+	--
+	-- Dua cap waktu, bukan satu: `startedAt` dalam DETIK karena
+	-- `AccusationService.rank` dan durasi sesi memakainya begitu, sedangkan
+	-- telemetri wajib `t_server_ms` (§0.2).
+	local startedAt = os.clock()
+	local telemetryStartedAt = telemetryMs()
+
 	session = {
 		caseId = caseId,
 		case = loaded,
@@ -811,8 +834,17 @@ local function startSession(): ()
 				return CaseGraph.statementAppliesTo(statement, variantId or "")
 			end
 		),
-		telemetry = TelemetryService.newSession(os.clock(), nil, variantId),
-		startedAt = os.clock(),
+		-- PRD §8 menempatkan lobby dan ready check SEBELUM kasus mulai (minggu 5),
+		-- dan `kamus-metrik.md` §1.3 memakai `case_started.t_server_ms` sebagai
+		-- titik nol jendela idle. Di scaffold ini keduanya berimpit -- sesi
+		-- dibuat tepat saat kasus mulai -- jadi satu cap waktu dipakai untuk
+		-- keduanya, dan minggu 5 tinggal memanggil
+		-- `TelemetryService.markCaseStarted` saat kasus benar-benar mulai.
+		--
+		-- `variantId` ikut masuk (SOP-02 langkah 12): tanpa itu "varian mana
+		-- yang lebih sering buntu" tidak bisa dihitung dari rekaman sesi.
+		telemetry = TelemetryService.newSession(telemetryStartedAt, telemetryStartedAt, variantId),
+		startedAt = startedAt,
 	}
 
 	-- Meja puzzle sesi ini (PRD §4, §15). Node bukti yang hidup pada varian
@@ -1030,7 +1062,7 @@ local function handleDeduce(player: Player, clueIds: any): ()
 		TelemetryService.record(current.telemetry, {
 			kind = "deduction",
 			role = role,
-			t = os.clock(),
+			t = telemetryMs(),
 			detail = result.deductionId,
 		})
 		fireToRole("DeductionResult", "deduction", {
@@ -1125,7 +1157,7 @@ local function handleAccuse(player: Player, accusation: any): ()
 	TelemetryService.record(current.telemetry, {
 		kind = "accusation",
 		role = role,
-		t = os.clock(),
+		t = telemetryMs(),
 		detail = tostring(result.correctCount),
 	})
 
@@ -1149,7 +1181,7 @@ local function handleAccuse(player: Player, accusation: any): ()
 		TelemetryService.record(current.telemetry, {
 			kind = "cold_case",
 			role = role,
-			t = os.clock(),
+			t = telemetryMs(),
 			detail = tostring(current.accusation.attemptsUsed),
 		})
 	end
@@ -1301,7 +1333,7 @@ local function handleMarkContradiction(player: Player, payload: any): ()
 	TelemetryService.record(current.telemetry, {
 		kind = "contradiction",
 		role = role,
-		t = os.clock(),
+		t = telemetryMs(),
 		detail = tostring(correct),
 	})
 
@@ -1429,7 +1461,7 @@ local function handleReport(player: Player, payload: any): ()
 	TelemetryService.record(current.telemetry, {
 		kind = "clue",
 		role = role,
-		t = os.clock(),
+		t = telemetryMs(),
 		detail = objectId,
 	})
 
@@ -1511,7 +1543,7 @@ local function handleInspect(player: Player, payload: any): ()
 		TelemetryService.record(current.telemetry, {
 			kind = "input",
 			role = role,
-			t = os.clock(),
+			t = telemetryMs(),
 			detail = objectId,
 		})
 		return
@@ -1533,7 +1565,7 @@ local function handleInspect(player: Player, payload: any): ()
 	TelemetryService.record(current.telemetry, {
 		kind = "clue",
 		role = role,
-		t = os.clock(),
+		t = telemetryMs(),
 		detail = objectId,
 	})
 
@@ -1641,7 +1673,7 @@ local function handlePlacePiece(player: Player, payload: any): ()
 	TelemetryService.record(current.telemetry, {
 		kind = "input",
 		role = role,
-		t = os.clock(),
+		t = telemetryMs(),
 		detail = nodeId,
 	})
 
@@ -1751,7 +1783,7 @@ local function handlePing(player: Player, phraseId: any): ()
 	TelemetryService.record(current.telemetry, {
 		kind = "input",
 		role = role,
-		t = os.clock(),
+		t = telemetryMs(),
 		detail = phraseId,
 	})
 

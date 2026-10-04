@@ -88,7 +88,7 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau                        # 1055 assertion, 20 berkas spec
+lune run tests/run.luau                        # 1099 assertion, 20 berkas spec
 selene --config selene.toml .                  # lint
 stylua --config-path stylua.toml --check .     # format
 ```
