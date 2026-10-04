@@ -77,7 +77,7 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau                        # 748 assertion, 17 berkas spec
+lune run tests/run.luau                        # 967 assertion, 19 berkas spec
 selene --config selene.toml .                  # lint
 stylua --config-path stylua.toml --check .     # format
 ```
@@ -93,6 +93,7 @@ jadi ia hanya bisa memeriksa modul murni:
 luau-analyze --mode=strict \
   src/shared/Config.luau src/shared/Roles.luau src/shared/Net.luau \
   src/shared/PingPhrases.luau src/shared/PuzzleTable.luau \
+  src/shared/LocationMap.luau \
   src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau \
   src/server/RoleAssignment.luau src/server/Matchmaking.luau \
   src/server/AccusationService.luau src/server/AccusationGate.luau \

@@ -157,9 +157,10 @@ Field rahasia yang diperiksa (`Net.SECRET_FIELDS`):
 `solution`, `variants`, `culprit`, `motive`, `method`, `key_deductions`, `lie`,
 `contradicted_by`, `draft`.
 
-`tests/leak-sweep.spec.luau` menyapu **seluruh** pasangan view × role (9 view ×
-3 role = 25 target; `puzzle_state` dan `piece_placed` hanya untuk Handler dan
-Director karena meja milik Handler — PRD §4, §8) dengan payload yang dirakit
+`tests/leak-sweep.spec.luau` menyapu **seluruh** pasangan view × role (11 view,
+30 pasangan; `target_marker` tidak punya pasangan Director karena Handler yang
+memasang marker, `puzzle_state` dan `piece_placed` hanya untuk Handler dan
+Director karena meja milik Handler — PRD §4, §7, §8) dengan payload yang dirakit
 dari data kasus gabungan, bentuknya sama seperti yang dirakit
 `init.server.luau`. Beberapa payload sengaja disuntik `solution` dan `culprit`
 supaya terbukti proyeksinya benar-benar menyaring. Uji ini berjalan di dalam
@@ -188,9 +189,14 @@ Tabel di bawah adalah keadaan setelah **EXTA-57** (minggu 4) memperluas
 | `puzzle_state` | Director | 0 | `cols`, `pieces`, `puzzle_id`, `rows` |
 | `piece_placed` | Handler | 0 | `accepted`, `piece_id`, `placed`, `x`, `y` |
 | `piece_placed` | Director | 0 | `accepted`, `piece_id`, `placed`, `x`, `y` |
-| `report_card` | Searcher | 0 | `id`, `image`, `location`, `object_id` |
-| `report_card` | Handler | 0 | `gives_key`, `id`, `image`, `location`, `object_id` |
-| `report_card` | Director | 0 | `id`, `image`, `location`, `object_id` |
+| `report_card` | Searcher | 0 | `id`, `image`, `label`, `location`, `object_id` |
+| `report_card` | Handler | 0 | `gives_key`, `id`, `image`, `label`, `location`, `object_id` |
+| `report_card` | Director | 0 | `id`, `image`, `label`, `location`, `object_id` |
+| `target_marker` | Searcher | 0 | `bearing`, `label`, `target_id` |
+| `target_marker` | Handler | 0 | `label`, `target_id` |
+| `ping` | Searcher | 0 | `from_role`, `label`, `phrase_id` |
+| `ping` | Handler | 0 | `from_role`, `label`, `phrase_id` |
+| `ping` | Director | 0 | `from_role`, `label`, `phrase_id` |
 | `accusation_result` | Searcher | 0 | `attempts_left`, `correct_count` |
 | `accusation_result` | Handler | 0 | `attempts_left`, `correct_count` |
 | `accusation_result` | Director | 0 | `attempts_left`, `correct_count`, `pending_confirmation`, `rank`, `resolved`, `won` |
@@ -198,7 +204,7 @@ Tabel di bawah adalah keadaan setelah **EXTA-57** (minggu 4) memperluas
 | `accusation_options` | Handler | 0 | `methods`, `motives`, `suspects` |
 | `accusation_options` | Director | 0 | `methods`, `motives`, `suspects` |
 
-**Total hit: 0 dari 25 target.**
+**Total hit: 0 dari 30 target.**
 
 Detektornya dibuktikan tidak vacuous — kalau tidak, "0 hit" tidak berarti apa-apa:
 
@@ -215,15 +221,16 @@ mungkin pada field baru ini memang tertangkap, bukan lewat begitu saja.
 ## 6. Perintah verifikasi dan hasilnya
 
 Semua dijalankan dari akar repo. Pertama di atas commit integrasi, lalu
-**diulang di `main`** setelah PR #10, #14, dan #11 mendarat (`01783b6`) dengan
-hasil identik — angka di bawah adalah angka di `main`.
+**diulang di `main`** setelah PR #10, #14, dan #11 mendarat (`01783b6`), lalu
+**diulang lagi di atas `main` `06b6ef8` setelah EXTA-57 mendarat**. Angka di
+bawah adalah angka putaran terakhir.
 
 ```sh
 lune run tests/run.luau     # EXIT=0
-selene src tests tools      # EXIT=0
-stylua --check src tests tools   # EXIT=0
+selene src tests tools      # EXIT=1 — 1 warning pre-existing
+stylua --check src tests tools   # EXIT=1 — 6 berkas pre-existing
 rojo build -o build.rbxlx   # EXIT=0
-lune run tools/validate_case.luau -- data/cases/gallery_01.json
+lune run tools/validate_case.luau -- data/cases/*.json
 ```
 
 Keluaran `lune run tests/run.luau` (ekor):
@@ -241,7 +248,7 @@ Keluaran `lune run tests/run.luau` (ekor):
 
 == NPCController: rank terpisah
 
-664 assertion, 0 gagal
+967 assertion, 0 gagal
 SEMUA LULUS
 ```
 
@@ -250,7 +257,7 @@ Keluaran `selene src tests tools`:
 ```
 Results:
 0 errors
-0 warnings
+1 warnings
 0 parse errors
 ```
 
@@ -264,19 +271,32 @@ Built project to build.rbxlx
 Pohon hasil build diperiksa isinya, bukan cuma status keluarnya:
 `ReplicatedStorage.Shared` berisi ModuleScript termasuk `case/` bersarang,
 `ServerScriptService.Server` adalah `Script` dengan ModuleScript anak,
-`ServerStorage.Cases` berisi `gallery_01`, dan `StarterPlayerScripts.Client`
-adalah `LocalScript` dengan `Hud`, `Table`, dan `NetClient`.
+`ServerStorage.Cases` berisi `case_00`, `gallery_01`, dan `kersana_01`, dan
+`StarterPlayerScripts.Client` adalah `LocalScript` dengan `Hud`, `Table`, dan
+`NetClient`.
 
 Validator atas kasus gabungan: `status: LULUS`, `errors: 0`, `warnings: 0`.
 
 Seluruh perintah di atas dijalankan ulang setelah EXTA-57 mendarat, dengan
-`664 assertion, 0 gagal` dan `EXIT=0` untuk seluruh baris. Pemeriksaan tipe
-(dijalankan ulang: 17 modul murni, 0 diagnostik):
+`967 assertion, 0 gagal` untuk `lune` dan `EXIT=0` untuk `rojo` serta validator.
+Dua perintah tetap keluar non-nol, dan keduanya **pre-existing di `main`** —
+dibandingkan langsung terhadap kepala `main` `06b6ef8`:
+
+| Perintah | `main` | branch EXTA-57 |
+|---|---|---|
+| `selene src tests tools` | 1 warning (`manual_table_clone`, `init.server.luau:411`) | 1 warning, baris sama |
+| `stylua --check src tests tools` | 7 berkas gagal | 6 berkas gagal |
+
+`src/client/Hud/init.luau` adalah satu-satunya berkas yang berubah status, dan
+arahnya membaik: ia gagal di `main`, bersih di branch ini.
+
+Pemeriksaan tipe (dijalankan ulang: 17 modul murni, 0 diagnostik):
 
 ```sh
 luau-analyze --mode=strict \
   src/shared/Config.luau src/shared/Roles.luau src/shared/Net.luau \
   src/shared/PingPhrases.luau src/shared/PuzzleTable.luau \
+  src/shared/LocationMap.luau \
   src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau \
   src/server/RoleAssignment.luau src/server/Matchmaking.luau \
   src/server/AccusationService.luau src/server/AccusationGate.luau \
@@ -310,7 +330,7 @@ menghasilkan keluaran yang sama sebelum dan sesudah.
 | # | Utang | Risiko | Kapan |
 |---|---|---|---|
 | 1 | **Dua `CaseLoader` koeksis** | `src/shared/case/CaseLoader.luau` (murni, dipakai CLI + `projectForRole`) dan `src/server/CaseLoader.luau` (menyentuh `Instance`, dipakai server) punya nama sama dan tanggung jawab yang tumpang tindih. Pembaca baru bisa salah `require`, dan logika pemilihan varian hidup di dua tempat (`selectVariant` vs `pickVariant`). | Sebelum minggu 2, saat loader dipanggil dari loop permainan |
-| 2 | `luau-lsp` + `sourcemap.json` belum ada | `init.server.luau`, `init.client.luau`, `NetClient`, `Hud/*` tidak bisa diperiksa tipe oleh `luau-analyze` mandiri (tidak punya definisi API Roblox). 14 modul murni sudah bersih di bawah `--mode=strict` (13 di `README.md` + `src/shared/case/CaseLoader.luau`). | EXTA-34 |
+| 2 | `luau-lsp` + `sourcemap.json` belum ada | `init.server.luau`, `init.client.luau`, `NetClient`, `Hud/*`, `Table/*` tidak bisa diperiksa tipe oleh `luau-analyze` mandiri (tidak punya definisi API Roblox). 17 modul murni sudah bersih di bawah `--mode=strict` (daftar lengkap di `README.md`). | EXTA-34 |
 | 3 | Tidak ada rate limiting remote | Client bisa spam `Report`/`SubmitDeduction` | Sebelum rilis |
 | 4 | Belum ada CI | Tidak ada yang menjalankan suite ini otomatis. `tools/validate_case.luau` sudah `exit 1` saat gagal, jadi ia siap jadi gate. | EXTA-34 |
 | 5 | Telemetri dihitung tapi tidak dikirim | PRD §12 tidak bisa diukur | EXTA-34 |

@@ -4,15 +4,15 @@ Rujukan: PRD v0.2 §15, §16, §17. Dokumen ini mencatat apa yang benar-benar
 jalan setelah minggu 0-1, apa yang belum, dan risiko teknis yang terbukti dari
 spike — bukan daftar rencana.
 
-Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (867 assertion,
-18 berkas spec), `lune run tests/leak-sweep.spec.luau`, dan
+Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (967 assertion,
+19 berkas spec), `lune run tests/leak-sweep.spec.luau`, dan
 `lune run tools/spike-s02-protokol.luau`. Angka di bawah berasal dari ketiganya
 plus `docs/spike-minggu-0-hasil.md`.
 
-Angka 867 adalah hasil terakhir setelah pekerjaan minggu 6 (Case 0, story case
-`kersana_01`, ping wheel final). Naik dari 566 karena tiga berkas spec baru
-(`location-map`, `case-content`, `puzzle-types`) dan perluasan `leak-sweep`,
-`ping`, serta `telemetry`.
+Angka 967 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main` ditambah
+EXTA-57 (minggu 4). Naik dari 566 karena tiga berkas spec baru (`location-map`,
+`case-content`, `puzzle-types`) dan perluasan `leak-sweep`, `ping`, serta
+`telemetry`; EXTA-57 menambahkan `tests/accusation-gate.spec.luau`.
 
 ## 1. Apa yang sudah jalan
 
@@ -270,7 +270,7 @@ dihapus dari payload proyeksi.
 rusak, tetapi **tidak** menyentuh `case_00.json` maupun `kersana_01.json`. Jadi
 sebelum ini kedua kasus minggu 6 hanya dijaga oleh perintah CLI manual: rusak
 satu berkas, suite tetap hijau. Dua baris ditambahkan ke tabel `expectations`
-supaya keduanya ikut digerbang (869 assertion).
+supaya keduanya ikut digerbang (869 assertion saat itu; 967 setelah EXTA-57).
 
 Celah yang sama masih ada di tempat lain: `tools/validate_case.luau` menerima
 daftar berkas dari argumen, jadi kasus baru **tidak** otomatis ikut kecuali
