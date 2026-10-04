@@ -193,7 +193,7 @@ Yang sudah diverifikasi:
 | Tidak ada overflow horizontal | `scrollWidth` dibandingkan `clientWidth` di DOM | 0 pada 320, 360, 390, 430, 768, dan 1400 point, untuk kedua halaman |
 | Teks tidak keluar container | Tiap elemen dibandingkan `scrollWidth` dengan `clientWidth` | Tidak ada yang terpotong di keenam lebar |
 | Enam layar dan satu lembar spesifikasi ada | Dihitung di DOM | 6 layar dan 1 lembar, sesuai rancangan |
-| Target sentuh | Setiap `button` diukur `getBoundingClientRect()` | 10 tombol, tidak ada yang di bawah 44 point |
+| Target sentuh | 29 elemen diukur `getBoundingClientRect()`: 10 tombol, 8 slot ping wheel, 4 kartu clue, 4 tombol HUD, 3 baris role | Tidak ada yang di bawah 44 point, terkecil 48 point |
 | Chip bukan kontrol | Setiap `.chip` dicari induk `button` atau `a` | 14 chip, 0 di dalam kontrol, semuanya `<span>` |
 | Font benar-benar terpakai | Lebar teks diukur di canvas dengan keluarga token, lalu dibandingkan dengan dua fallback | Keempatnya berbeda dari fallback: Nunito 271.68, Merriweather 273.87, Special Elite 297.66, Roboto Mono 316.85, lawan serif 235.78 dan mono 317.88 |
 | Halaman gaya puzzle | Lebar dokumen, gambar rusak, dan jumlah sel | 10 gambar, 0 gagal dimuat, 102 sel tabel, 0 overflow di keenam lebar |

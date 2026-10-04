@@ -48,7 +48,7 @@ AUDIT = """
 <script>
 window.addEventListener("load", function () { setTimeout(function () {
   var de = document.documentElement;
-  var out = { doc: de.scrollWidth - de.clientWidth, keluar: [], btn: 0, btnKecil: [],
+  var out = { doc: de.scrollWidth - de.clientWidth, keluar: [],
               layar: 0, spec: 0, chip: 0, chipKlik: 0, img: 0, imgRusak: 0, font: [] };
 
   document.querySelectorAll("*").forEach(function (el) {
@@ -58,20 +58,26 @@ window.addEventListener("load", function () { setTimeout(function () {
     }
   });
 
-  document.querySelectorAll("button").forEach(function (b) {
-    out.btn++;
-    var r = b.getBoundingClientRect();
-    if (r.height < 44 || r.width < 44) {
-      out.btnKecil.push(b.textContent.trim() + " " + Math.round(r.width) + "x" + Math.round(r.height));
-    }
-  });
-
   out.layar = document.querySelectorAll(".screen").length;
   out.spec = document.querySelectorAll(".spec").length;
 
   document.querySelectorAll(".chip").forEach(function (c) {
     out.chip++;
     if (c.closest("button") || c.closest("a")) out.chipKlik++;
+  });
+
+  var SEL = ["button", ".clue-card", ".ping-slot", ".hud-btn", ".role-opt"];
+  out.target = 0; out.bawah44 = []; out.perKelas = {};
+  SEL.forEach(function (s) {
+    document.querySelectorAll(s).forEach(function (el) {
+      out.target++;
+      out.perKelas[s] = (out.perKelas[s] || 0) + 1;
+      var r = el.getBoundingClientRect();
+      if (r.height < 44 || r.width < 44) {
+        out.bawah44.push(s + " " + (el.textContent || "").trim().slice(0, 20) + " " +
+                          Math.round(r.width) + "x" + Math.round(r.height));
+      }
+    });
   });
 
   out.img = document.querySelectorAll("img").length;
@@ -126,8 +132,8 @@ def audit(berkas: pathlib.Path, lebar: int) -> dict:
 def main() -> int:
     gagal = []
     halaman = {
-        "index.html": {"layar": 6, "spec": 1, "btn": 10, "chip": 14},
-        "puzzle-style.html": {"layar": 0, "spec": 0, "btn": 0, "chip": 0},
+        "index.html": {"layar": 6, "spec": 1, "target": 29, "chip": 14},
+        "puzzle-style.html": {"layar": 0, "spec": 0, "target": 0, "chip": 0},
     }
 
     for nama, harapan in halaman.items():
@@ -140,8 +146,8 @@ def main() -> int:
                 status.append(f"overflow={d['doc']}")
             if d["keluar"]:
                 gagal.append(f"{nama} @{lebar}: teks keluar container {d['keluar']}")
-            if d["btnKecil"]:
-                gagal.append(f"{nama} @{lebar}: target sentuh di bawah 44 {d['btnKecil']}")
+            if d["bawah44"]:
+                gagal.append(f"{nama} @{lebar}: target sentuh di bawah 44 {d['bawah44']}")
             if d["chipKlik"]:
                 gagal.append(f"{nama} @{lebar}: {d['chipKlik']} chip berada di dalam kontrol")
             if d["imgRusak"]:
@@ -149,9 +155,10 @@ def main() -> int:
             for kunci, nilai in harapan.items():
                 if d[kunci] != nilai:
                     gagal.append(f"{nama} @{lebar}: {kunci} {d[kunci]}, seharusnya {nilai}")
+            rinci = " ".join(f"{k}={v}" for k, v in sorted(d["perKelas"].items()))
             print(f"  {nama:20s} @{lebar:5d} point  overflow={d['doc']}  "
-                  f"keluar={len(d['keluar'])}  btn={d['btn']}  bawah44={len(d['btnKecil'])}  "
-                  f"chip={d['chip']}  chipKlik={d['chipKlik']}  "
+                  f"keluar={len(d['keluar'])}  target={d['target']} ({rinci})  "
+                  f"bawah44={len(d['bawah44'])}  chip={d['chip']}  chipKlik={d['chipKlik']}  "
                   f"layar={d['layar']}  spec={d['spec']}  img={d['img']}  rusak={d['imgRusak']}")
 
     d = audit(DIR / "index.html", 390)
