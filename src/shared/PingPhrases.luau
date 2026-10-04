@@ -77,4 +77,29 @@ function PingPhrases.isValid(role: string, phraseId: string): boolean
 	return false
 end
 
+--[[
+	Label frasa untuk ditampilkan. Dipakai dua sisi:
+
+	  - server, saat merelay ping ke role lain (penerima butuh teksnya),
+	  - client, saat menampilkan toast atas ping yang ia kirim sendiri.
+
+	Label sengaja TIDAK disimpan client. Kalau client menyimpan salinannya
+	sendiri, dua daftar frasa bisa menyimpang dan teks yang dikirim ke pemain
+	berhenti cocok dengan yang divalidasi server.
+
+	Mengembalikan nil bila frasa tidak dikenal -- pemanggil memperlakukan nil
+	sebagai "jangan kirim", bukan sebagai frasa kosong.
+]]
+function PingPhrases.labelFor(role: string, phraseId: string): string?
+	if type(phraseId) ~= "string" then
+		return nil
+	end
+	for _, phrase in PingPhrases.forRole(role) do
+		if phrase.id == phraseId then
+			return phrase.label
+		end
+	end
+	return nil
+end
+
 return PingPhrases

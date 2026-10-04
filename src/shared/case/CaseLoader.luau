@@ -208,8 +208,30 @@ local ROLE_PROJECTION = {
 
 CaseLoader.ROLE_PROJECTION = ROLE_PROJECTION
 
+--[[
+	Ejaan kanonik role untuk proyeksi ini adalah huruf kecil, sama seperti
+	`CaseGraph.ROLES` dan kunci `case.briefing`. Server memanggil dengan nama
+	role tampilan (`Roles.DIRECTOR` = "Director"), jadi ejaan dinormalkan di
+	satu tempat ini alih-alih memaksa tiap pemanggil mengingat bedanya.
+
+	Sebelum ini pemanggilan dengan "Director" mengembalikan nil secara senyap:
+	pernyataan per varian tidak pernah sampai ke Director, dan yang terlihat di
+	HUD hanyalah pernyataan netral dari `briefings.Director.statements`.
+]]
+local function canonicalRole(role: any): string?
+	if type(role) ~= "string" then
+		return nil
+	end
+	return string.lower(role)
+end
+
 function CaseLoader.projectForRole(case: any, variantId: string, role: string): any
-	local spec = ROLE_PROJECTION[role]
+	local canonical = canonicalRole(role)
+	if canonical == nil then
+		return nil
+	end
+
+	local spec = ROLE_PROJECTION[canonical]
 	if spec == nil then
 		return nil
 	end
@@ -234,9 +256,17 @@ function CaseLoader.projectForRole(case: any, variantId: string, role: string): 
 		location = case.location,
 		variant_id = variantId,
 		role = role,
-		key_deductions = case.key_deductions,
+		-- `key_deductions` sengaja TIDAK ikut. Ia ada di `Net.SECRET_FIELDS`,
+		-- dan tidak satu pun view `briefing` di `Net.CLIENT_VIEWS` memuatnya:
+		-- ambang gerbang dikirim terpisah sebagai `key_deductions_required`
+		-- pada view `session_state`, hanya ke Director. Field ini dulu ada di
+		-- sini dan membuat proyeksi role gagal pemindaian `Net.findSecrets`.
 		nodes = nodes,
-		briefing = type(case.briefing) == "table" and case.briefing[role] or nil,
+		-- `case.briefing` memakai kunci huruf kecil (`$defs.briefing` di
+		-- `schema/case.schema.json`), berbeda dari `case.briefings` yang
+		-- memakai nama role tampilan. Karena itu lookup-nya memakai ejaan
+		-- kanonik, bukan ejaan yang dikirim pemanggil.
+		briefing = type(case.briefing) == "table" and case.briefing[canonical] or nil,
 	}
 
 	if spec.includeStatements and type(case.statements) == "table" then
