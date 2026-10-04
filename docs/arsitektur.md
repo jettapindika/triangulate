@@ -208,9 +208,9 @@ sequenceDiagram
     participant D as Director (client)
 
     Srv->>H: briefing (view "briefing", role Handler)
-    H->>Srv: TargetMarker (ikon target)
-    Srv->>D: TargetMarker (tampil di HUD)
-    S->>Srv: Report {object_id, location}
+    H->>Srv: SetTarget (ikon target Handler)
+    Srv->>S: TargetMarker (view "target_marker", role Searcher)
+    S->>Srv: Report {object_id}
     Srv->>D: ReportCard (view "report_card", role Director)
     Srv->>H: ReportCard (view "report_card", role Handler) — berisi gives_key
     Note over Srv: DeductionEngine.combine — HANYA di server
@@ -248,8 +248,8 @@ Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 (`pickVariant`, `shapeProblems`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 566 assertion berjalan dalam waktu di bawah satu
-detik (`tests/run.luau`, 15 berkas spec). Untuk game yang aturan menang-kalahnya
+Studio dan tanpa Roblox.** 867 assertion berjalan dalam waktu di bawah satu
+detik (`tests/run.luau`, 18 berkas spec). Untuk game yang aturan menang-kalahnya
 serumit PRD §5 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank
 S/A/B/C), itu perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio
 tiap kali".
@@ -272,7 +272,7 @@ bisa jalan.
 
 ## 6. RemoteEvent: dibuat kode, bukan Rojo
 
-`init.server.luau` membuat seluruh 13 RemoteEvent dari satu sumber:
+`init.server.luau` membuat seluruh 18 RemoteEvent dari satu sumber:
 `Net.REMOTE_NAMES`. Tidak ada remote di `default.project.json`.
 
 Alasannya: kalau remote didefinisikan dua kali (sekali di file project, sekali
@@ -290,12 +290,24 @@ Pembagiannya:
 
 | Arah | Jumlah | Nama |
 |---|---|---|
-| Server → client | 7 | `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult` |
-| Client → server | 6 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `RequestHint`, `ConfirmAccusation` |
+| Server → client | 10 | `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult`, `PuzzleState`, `PiecePlaced`, `PingRelay` |
+| Client → server | 8 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece` |
+
+`PingRelay` dan `SetTarget` adalah dua remote minggu 6. Keduanya ada karena
+`tests/net.spec.luau` menegaskan setiap remote punya **tepat satu** arah:
+
+- `PingRelay` (server → client) dipisah dari `Ping` (client → server) supaya
+  frasa ping tidak perlu membuat satu remote dua arah.
+- `SetTarget` (client → server) ada karena PRD §7 menjadikan Target Marker
+  aksi **Handler**, jadi harus berangkat dari client; server meneruskannya ke
+  Searcher lewat `TargetMarker`.
 
 `NetClient` sengaja tidak menyediakan pengiriman payload bebas: tiap remote
 punya fungsi bernama (`NetClient.report`, `NetClient.deduce`, `NetClient.accuse`,
 …), sehingga di code review terlihat persis data apa yang meninggalkan client.
+`NetClient.report(bound, objectId)` hanya mengirim `object_id` — lokasi yang
+tampil di clue board Director **diturunkan server** dari data kasus, tidak
+dipercaya dari client.
 
 Catatan urutan: RemoteEvent *"arrive in the order you fire them, including
 across different RemoteEvent instances"*, tetapi RemoteFunction dan RemoteEvent
