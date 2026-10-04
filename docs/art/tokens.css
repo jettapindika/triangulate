@@ -1,0 +1,66 @@
+/* Token warna Triangulate.
+   Sumber angka: docs/art/palette.json (hasil verifikasi WCAG 2.1).
+   Jangan tulis nilai hex langsung di komponen; selalu pakai variabel ini. */
+
+:root {
+  /* Base gelap: cokelat-hitam hangat (kayu tua di bawah lampu), bukan hitam murni */
+  --noir-950: #0B0908; /* void terluar, latar dokumen di luar meja */
+  --noir-900: #14100E; /* latar terdalam */
+  --noir-800: #1D1815; /* latar panel standar */
+  --noir-700: #282019; /* panel terangkat, kartu */
+  --noir-600: #35291F; /* permukaan hover */
+  --noir-500: #46372A; /* dekoratif saja */
+  --noir-400: #5E4B3A; /* dekoratif saja */
+
+  /* Garis & ikon: lulus 3:1 di noir-900/800/700 */
+  --line: #7A7168;
+  --icon-mute: #7D7166;
+
+  /* Kertas & cahaya */
+  --paper-100: #F4EDE1; /* teks utama */
+  --paper-200: #E2D8C6;
+  --paper-300: #C3B7A2;
+  --paper-400: #9A9080;
+  --lamp-100: #FFE0B0; /* kilau */
+  --lamp-300: #F0B457; /* aksen utama, cincin fokus */
+  --lamp-500: #E09A2E; /* lampu meja Handler */
+
+  /* Material dunia */
+  --wood-900: #2A1D13;
+  --wood-700: #4A3524;
+  --wood-500: #6E5136;
+  --wood-300: #96714B;
+  --brass-500: #C9A227;
+
+  /* Tinta di atas kertas: dokumen, kartu clue, bukti cetak */
+  --ink-900: #2A2118;
+  --ink-700: #4A3A28;
+  --ink-alert: #8E2F26;
+  --paper-contra: #F3D9D4; /* kartu kontradiksi, satu-satunya kartu berwarna */
+
+  /* Aksen role */
+  --role-searcher: #5FA8D3;
+  --role-handler: #E09A2E;
+  --role-director: #B96A9E;
+  --role-director-text: #BE7AA6;
+  --role-npc: #8A93A0;
+
+  /* Status */
+  --ok: #63B37A;
+  --alert: #E36459;
+
+  /* Bentuk: chamfer kecil, bukan pill. Hierarki lewat radius, bukan keseragaman. */
+  --r-sm: 3px;
+  --r-md: 6px;
+  --r-lg: 10px;
+
+  /* Target sentuh minimum. Offset Roblox = point, bukan piksel fisik. */
+  --tap-min: 48px;
+  --tap-gap: 8px;
+
+  /* Font */
+  --font-ui: "Nunito", "Avenir Next", system-ui, sans-serif;
+  --font-archive: "Merriweather", Palatino, Georgia, serif;
+  --font-type: "Special Elite", "Courier New", monospace;
+  --font-code: "Roboto Mono", ui-monospace, monospace;
+}

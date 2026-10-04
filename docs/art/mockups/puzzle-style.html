@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Triangulate - Gaya Ilustrasi Puzzle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Nunito:wght@400;600;700;800&family=Roboto+Mono:wght@400;500;700&family=Special+Elite&display=swap" rel="stylesheet">
+<link href="../tokens.css" rel="stylesheet">
+<style>
+/* Token dibaca dari ../tokens.css. Jangan menyalin nilai hex ke berkas ini. */
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--noir-950);color:var(--paper-100);font-family:var(--font-ui);padding:34px;max-width:2080px}
+/* Tabel lebar digulir sendiri, bukan mendorong halaman melebar. */
+.tabel-gulir{overflow-x:auto;max-width:100%}
+h1{font-family:var(--font-archive);font-size:26px;margin-bottom:6px}
+.lede{font-size:13px;color:var(--paper-300);line-height:1.6;max-width:900px;margin-bottom:26px}
+h2{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-400);margin:30px 0 14px}
+.row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.panel{background:var(--noir-800);border:1px solid var(--noir-600);border-radius:10px;padding:16px;max-width:100%;min-width:0}
+.cap{font-size:11px;color:var(--paper-400);font-weight:700;margin-top:10px;line-height:1.45}
+.cap b{color:var(--paper-100);font-family:var(--font-code)}
+
+/* --- Gaya A: ilustrasi flat tahan downscale (DIPILIH) ---
+   Bidang warna rata, tepi keras, tanpa gradien. Digambar oleh
+   make_style_samples.py dari token di tokens.css. */
+/* --- Gaya B: bertepi lembut (DITOLAK) ---
+   Komposisi dan warna sama, tetapi tepinya ramp landai selebar 8 px. */
+.sampel{display:block;width:256px;height:256px;border:1px solid var(--noir-600);border-radius:6px}
+
+/* --- Uji downscale: gambar yang sama pada 4 ukuran --- */
+.ladder{display:flex;gap:14px;align-items:flex-end;flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding-bottom:6px}
+.ladder figure{text-align:center}
+.ladder img{display:block;image-rendering:auto;border:1px solid var(--noir-600);border-radius:4px}
+.ladder figcaption{font-family:var(--font-code);font-size:10.5px;color:var(--paper-300);margin-top:6px;font-weight:700}
+
+/* --- Grid maksimum 6x6 --- */
+.grid-demo{display:grid;grid-template-columns:repeat(6,1fr);width:258px;height:258px;gap:1px;background:var(--noir-600)}
+.grid-demo div{background:var(--paper-200)}
+.grid-demo .alt{background:var(--paper-400)}
+.grid-demo .acc{background:var(--lamp-300)}
+
+table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}
+th,td{overflow-wrap:anywhere}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--noir-600);vertical-align:top}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--paper-400)}
+td code{font-family:var(--font-code);font-size:11.5px;color:var(--lamp-100)}
+.pass{color:var(--ok);font-weight:800}
+.fail{color:var(--alert);font-weight:800}
+.note{font-size:12px;line-height:1.6;color:var(--paper-300);margin-top:12px}
+.note b{color:var(--paper-100)}
+</style>
+</head>
+<body>
+
+<h1>Gaya ilustrasi puzzle dan perilaku downscale</h1>
+<p class="lede">
+  PRD v0.2 §15 menetapkan bahwa platform dapat menurunkan resolusi texture besar, dan
+  menyarankan fallback: satu sheet per bukti, grid terbatas maksimum 6x6, atau gaya
+  ilustrasi flat yang tahan downscale. Halaman ini menguji ketiganya pada gambar nyata
+  1024 px yang diturunkan bertahap sampai 128, dan mengoreksi satu dugaan yang ternyata
+  tidak terbukti.
+</p>
+
+<h2>1 - Dua gaya, komposisi dan warna yang sama</h2>
+<div class="row">
+  <div class="panel">
+    <img class="sampel" src="style-flat-1024.png" alt="Ilustrasi gaya A, bidang rata bertepi keras">
+    <p class="cap"><b>Gaya A, flat.</b> Tiap bidang satu warna rata, tepi keras.
+      Zona transisi tepinya <b>0,5 px</b> pada skala 256. Detail terkecil adalah
+      pintu <b>34x48</b> px. <span class="pass">DIPILIH</span></p>
+  </div>
+  <div class="panel">
+    <img class="sampel" src="style-grad-1024.png" alt="Ilustrasi gaya B, bertepi lembut">
+    <p class="cap"><b>Gaya B, bertepi lembut.</b> Bentuk, warna, dan posisi identik dengan
+      gaya A, hanya tepinya digambar sebagai ramp landai. Zona transisinya
+      <b>8 px</b> pada skala 256, jadi tidak ada batas tegas yang bisa
+      dipertahankan resampler. <span class="fail">DITOLAK</span></p>
+  </div>
+</div>
+<p class="note">
+  Kedua gambar ini dihasilkan <code>make_style_samples.py</code> dari token yang sama di
+  <code>tokens.css</code>, lalu diukur <code>measure_downscale.py</code>. Karena komposisinya
+  identik, selisih hasil ukur hanya berasal dari cara tepinya digambar.
+</p>
+
+<h2>2 - Uji downscale nyata: 1024 - 512 - 256 - 128 px</h2>
+<div class="row">
+  <div class="panel">
+    <div style="font-size:11.5px;font-weight:800;color:var(--paper-100);margin-bottom:10px">Gaya A, flat</div>
+    <div class="ladder" id="ladder-flat"></div>
+  </div>
+  <div class="panel">
+    <div style="font-size:11.5px;font-weight:800;color:var(--paper-100);margin-bottom:10px">Gaya B, bertepi lembut</div>
+    <div class="ladder" id="ladder-grad"></div>
+  </div>
+</div>
+
+<h2>3 - Hasil pengukuran</h2>
+<div class="panel" style="margin-bottom:8px">
+  <p class="note" style="margin-top:0">
+    Semua angka di bawah keluar dari <code>measure_downscale.py</code>. Skala 0 sampai 255,
+    luma Rec. 601. <b>Kontras</b> adalah selisih kecerahan area menyala dan area gelap.
+    <b>Detail</b> adalah selisih kecerahan pintu dengan dinding di belakangnya.
+  </p>
+  <table>
+    <tr><th>Gaya</th><th>Ukuran</th><th>Terang</th><th>Gelap</th><th>Kontras</th><th>Detail</th></tr>
+    <tr><td rowspan="4"><b>A, flat</b></td><td><code>1024</code></td><td>178,5</td><td>33,6</td><td><code>144,9</code></td><td><code>40,4</code></td></tr>
+    <tr><td><code>512</code></td><td>178,5</td><td>33,6</td><td><code>144,9</code></td><td><code>40,4</code></td></tr>
+    <tr><td><code>256</code></td><td>178,4</td><td>33,6</td><td><code>144,8</code></td><td><code>40,4</code></td></tr>
+    <tr><td><code>128</code></td><td>178,5</td><td>33,6</td><td><code>144,9</code></td><td><code>40,4</code></td></tr>
+    <tr><td rowspan="4"><b>B, lembut</b></td><td><code>1024</code></td><td>178,0</td><td>33,6</td><td><code>144,4</code></td><td><code>39,4</code></td></tr>
+    <tr><td><code>512</code></td><td>178,0</td><td>33,6</td><td><code>144,4</code></td><td><code>39,5</code></td></tr>
+    <tr><td><code>256</code></td><td>178,0</td><td>33,6</td><td><code>144,5</code></td><td><code>39,4</code></td></tr>
+    <tr><td><code>128</code></td><td>177,9</td><td>33,6</td><td><code>144,3</code></td><td><code>39,5</code></td></tr>
+  </table>
+  <p class="note">
+    <b>Temuan pertama, dan ini mengoreksi dugaan awal:</b> downscale <b>tidak</b> menurunkan
+    kontras bidang. Pada kedua gaya, kontras berubah 0,0% dari 1024 ke 128 px. Jadi masalahnya
+    bukan warna yang memudar, melainkan <b>batas bentuk yang hilang</b>.
+  </p>
+  <table>
+    <tr><th>Gaya</th><th>Lebar zona transisi tepi, skala 256</th><th>Putusan</th></tr>
+    <tr><td><b>A, flat</b></td><td><code>0,5</code> px</td><td><span class="pass">tepi keras</span></td></tr>
+    <tr><td><b>B, lembut</b></td><td><code>8,0</code> px</td><td><span class="fail">tepi landai</span></td></tr>
+  </table>
+  <p class="note">
+    <b>Temuan kedua.</b> Tepi gaya B butuh 8 px untuk berpindah dari warna dinding ke warna
+    pintu, sedangkan gaya A selesai dalam 0,5 px. Artinya pada gaya B, sebuah pintu 34 px
+    kehilangan hampir seperempat lebarnya menjadi zona kabur, dan tidak ada garis batas yang
+    bisa dipertahankan saat texture diturunkan. Inilah alasan sebenarnya gaya flat dipilih,
+    bukan karena warnanya.
+  </p>
+  <table>
+    <tr><th>Sisi fitur, skala 256</th><th>Kedalaman setelah turun ke 128 px</th><th>Putusan</th></tr>
+    <tr><td><code>2</code></td><td>0,80</td><td><span class="fail">tidak utuh</span></td></tr>
+    <tr><td><code>3</code></td><td>0,98</td><td><span class="pass">utuh</span></td></tr>
+    <tr><td><code>4</code></td><td>1,05</td><td><span class="pass">utuh</span></td></tr>
+    <tr><td><code>6</code></td><td>1,07</td><td><span class="pass">utuh</span></td></tr>
+    <tr><td><code>8</code></td><td>1,06</td><td><span class="pass">utuh</span></td></tr>
+    <tr><td><code>16</code></td><td>1,06</td><td><span class="pass">utuh</span></td></tr>
+  </table>
+  <p class="note">
+    <b>Temuan ketiga.</b> Fitur 3 px pada skala 256 masih utuh setelah gambar turun ke 128 px;
+    yang 2 px melemah ke 0,80. Angka di atas 1,00 muncul karena LANCZOS sedikit menajamkan tepi,
+    jadi bukan galat. Titik lemahnya di 2 px, dan <b>ambang produksi dipasang di 6 px</b>,
+    yaitu 2x lipat titik lemah, untuk menutup kompresi texture dan resampler perangkat yang
+    bukan LANCZOS. Pada sel yang tampil 170 px, 6 px di skala 256 setara 4 px di layar.
+  </p>
+</div>
+
+<h2>4 - Grid maksimum 6x6 per sheet</h2>
+<div class="row">
+  <div class="panel">
+    <div class="grid-demo" id="grid6"></div>
+    <p class="cap"><b>6x6 = 36 sel.</b> Pada sheet 1024 px tiap sel hanya <b>170x170</b> px.
+      Itu batas aman terakhir. Grid 8x8 memberi sel 128 px dan mulai kehilangan detail.</p>
+  </div>
+  <div class="panel" style="max-width:560px">
+    <table>
+      <tr><th>Ukuran sheet</th><th>Sel 6x6</th><th>Sel 8x8</th><th>Putusan</th></tr>
+      <tr><td><code>1024</code></td><td><code>170</code></td><td><code>128</code></td><td><span class="pass">6x6 aman</span></td></tr>
+      <tr><td><code>512</code></td><td><code>85</code></td><td><code>64</code></td><td><span class="fail">8x8 terlalu kecil</span></td></tr>
+      <tr><td><code>256</code></td><td><code>42</code></td><td><code>32</code></td><td><span class="fail">tidak layak</span></td></tr>
+    </table>
+    <p class="note">
+      Angka sel berasal dari pembagian langsung ukuran sheet. Ambang 64 px diambil dari
+      <b>ASUMSI</b> praktik umum UI: di bawah itu detail seperti goresan tinta dan lipatan kertas
+      hilang saat texture diturunkan perangkat. Verifikasi perangkat nyata ada di EXTA-40.
+    </p>
+  </div>
+</div>
+
+<h2>5 - Batas resmi platform</h2>
+<div class="panel">
+  <table>
+    <tr><th>Jenis texture</th><th>Batas resmi</th><th>Sumber</th><th>Implikasi untuk sheet bukti</th></tr>
+    <tr>
+      <td>Texture umum (gambar UI, decal)</td>
+      <td><code>4096x4096</code></td>
+      <td>dokumentasi Roblox, texture-specifications</td>
+      <td>Sheet bukti 1024 aman, tidak perlu dipecah karena batas unggah</td>
+    </tr>
+    <tr>
+      <td>PBR / UV texture map</td>
+      <td><code>1024x1024</code></td>
+      <td>dokumentasi Roblox, texture-specifications</td>
+      <td>Hanya relevan bila potongan puzzle jadi material 3D, bukan gambar UI</td>
+    </tr>
+    <tr>
+      <td>Rekomendasi ukuran per ukuran objek</td>
+      <td><code>256</code> untuk 5x5 stud</td>
+      <td>dokumentasi Roblox, texture-specifications</td>
+      <td>Potongan puzzle yang tampil kecil di meja cukup 256</td>
+    </tr>
+  </table>
+  <p class="note">
+    Engine Roblox memuat texture mulai dari versi kualitas rendah lalu menaikkannya sesuai
+    kemampuan perangkat. Jadi gambar harus tetap terbaca pada versi terendah, bukan hanya pada
+    versi penuh. Inilah alasan gaya flat dipilih: kegagalannya bertahap, bukan mendadak.
+  </p>
+</div>
+
+<h2>6 - Perilaku ImageRectOffset dan ImageRectSize</h2>
+<div class="panel">
+  <table>
+    <tr><th>Properti</th><th>Tipe</th><th>Perilaku resmi</th><th>Aturan pakai di Triangulate</th></tr>
+    <tr>
+      <td><code>ImageRectOffset</code></td><td>Vector2</td>
+      <td>Offset piksel dari sudut kiri atas gambar</td>
+      <td>Dihitung server dari indeks sel, dikirim ke client sebagai satu angka</td>
+    </tr>
+    <tr>
+      <td><code>ImageRectSize</code></td><td>Vector2</td>
+      <td>Ukuran piksel area yang ditampilkan. Bila salah satu dimensi 0, seluruh gambar ditampilkan</td>
+      <td>Selalu diisi eksplisit. Nilai 0 hanya dipakai sengaja untuk menampilkan seluruh sheet</td>
+    </tr>
+    <tr>
+      <td><code>ResampleMode</code></td><td>Enum.ResamplerMode</td>
+      <td>Menentukan cara penskalaan gambar</td>
+      <td>Pixelated untuk potongan bergaya cetak, Default untuk foto bukti</td>
+    </tr>
+  </table>
+  <p class="note">
+    Dokumentasi resmi menyebut sprite sheet sebagai pemakaian yang disarankan: menggabungkan
+    banyak gambar kecil ke satu texture membuat aset lebih cepat dimuat. Untuk meja puzzle ini
+    berarti satu sheet per bukti berisi seluruh potongannya, bukan satu unggahan per potongan.
+  </p>
+</div>
+
+<script>
+// Bangun tangga downscale. Sumber: satu PNG 1024 yang sama.
+const SIZES = [1024, 512, 256, 128];
+function ladder(containerId, src) {
+  const box = document.getElementById(containerId);
+  for (const s of SIZES) {
+    const fig = document.createElement('figure');
+    const img = document.createElement('img');
+    img.src = src;
+    img.width = s; img.height = s;
+    img.alt = 'Uji downscale ' + s + ' px';
+    const cap = document.createElement('figcaption');
+    cap.textContent = s + ' px';
+    fig.appendChild(img); fig.appendChild(cap);
+    box.appendChild(fig);
+  }
+}
+ladder('ladder-flat', 'style-flat-1024.png');
+ladder('ladder-grad', 'style-grad-1024.png');
+
+// Grid 6x6 dengan pola bergantian supaya batas sel terlihat.
+const g = document.getElementById('grid6');
+for (let i = 0; i < 36; i++) {
+  const d = document.createElement('div');
+  d.className = i % 11 === 0 ? 'acc' : (i % 2 ? 'alt' : '');
+  g.appendChild(d);
+}
+</script>
+</body>
+</html>
