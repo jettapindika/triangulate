@@ -56,6 +56,7 @@ local REMOTE_NAMES: { string } = {
 	"ConfirmAccusation",
 	"PlacePiece",
 	"MarkContradiction",
+	"Inspect",
 }
 
 -- Remote yang arahnya server -> client.
@@ -97,6 +98,10 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	ConfirmAccusation = true,
 	PlacePiece = true,
 	MarkContradiction = true,
+	-- PRD §6: mini-aksi Searcher (senter UV, buka laci, lockpick). Client
+	-- melaporkan "saya mulai/selesai/batal memeriksa objek X", server yang
+	-- memutuskan apakah itu sah dan kunci apa yang diberikan.
+	Inspect = true,
 }
 
 -- Field yang boleh dilihat tiap role, per jenis payload.

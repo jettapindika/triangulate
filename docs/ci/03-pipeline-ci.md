@@ -211,7 +211,7 @@ Diukur 2026-10-04, `luau-lsp 1.70.1`, definisi tag `1.70.1`, `rojo sourcemap` le
 | # | Lokasi | Pesan |
 |---|---|---|
 | 1 | `src/server/NPCController.luau:53,21` | `TypeError: Expected this to be 'string', but got 'T'` — tipe generik `T` dipakai sebagai indeks `{ [T]: boolean }` |
-| 2 | `src/server/CaseLoader.luau:152,15` | `TypeError: Unknown require: unsupported path` |
+| 2 | `src/server/CaseSource.luau:207,15` | `TypeError: Unknown require: unsupported path` — baris `require(module)` dinamis. Di commit pengukuran `c25d062` berkas ini bernama `src/server/CaseLoader.luau` dan galatnya di `:152,15`; di-`git mv` di EXTA-55 tanpa mengubah bentuk `require`-nya, sehingga barisnya bergeser. |
 | 3 | `src/server/init.server.luau:135,5` | `TypeError: Types RemoteEvent and nil cannot be compared with == because they do not have the same metatable` |
 | 4 | `src/server/init.server.luau:189,22` | `Expected this to be exactly 'PlayerRef', but got '{| id: any, isNew: boolean, preferences: {"Director" \| "Handler" \| "Searcher"}, recentRoles: {string} \|}'` |
 | 5 | `src/server/init.server.luau:197,47` | `Expected this to be exactly '{string}', but got '{"Director" \| "Handler" \| "Searcher"}'` |
@@ -357,7 +357,7 @@ Seluruh tabel ini **diukur ulang 2026-10-04 pada pohon hasil rebase** (bukan lag
 | 7 | `lune run tools/validate_case.luau -- tests/fixtures/cycle.json` | **1** | `HASIL: 1 dari 1 file gagal.` / `[graph.dead_end]` |
 | 8 | `luau-lsp analyze … src` | **1** | 8 galat tipe di `src/` — lihat §3.5 |
 
-Langkah 1–6 hijau, jadi keputusan penyelarasan versi (§3.1), `std = "luau+roblox"` (§2.1) dan `.luaurc` milik `main` **tidak** merusak apa pun. Langkah 7 adalah kontrol negatif yang memang harus merah. Langkah 8 merah karena galat bawaan EXTA-32; itulah dasar `continue-on-error: true` di §3.5. Kedelapan galatnya persis: `NPCController.luau:53`, `CaseLoader.luau:152`, dan `init.server.luau:135,189,197,224,505,522` — semuanya di `src/server/`.
+Langkah 1–6 hijau, jadi keputusan penyelarasan versi (§3.1), `std = "luau+roblox"` (§2.1) dan `.luaurc` milik `main` **tidak** merusak apa pun. Langkah 7 adalah kontrol negatif yang memang harus merah. Langkah 8 merah karena galat bawaan EXTA-32; itulah dasar `continue-on-error: true` di §3.5. Kedelapan galatnya persis: `NPCController.luau:53`, `CaseSource.luau:207` (dulu `CaseLoader.luau:152`, di-`git mv` di EXTA-55), dan `init.server.luau:135,189,197,224,505,522` — semuanya di `src/server/`.
 
 Kontrol negatif, ketiganya benar-benar memicu jalur merah:
 

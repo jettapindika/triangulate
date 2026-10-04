@@ -112,6 +112,113 @@ Harness.equal(#registered.order, 2, "pendaftaran ulang tidak menambah urutan")
 
 Harness.equal(PuzzleTableService.get(registered, "ev_tidak_ada"), nil, "node tak dikenal -> nil")
 
+Harness.suite("PuzzleTableService: gerbang kunci")
+
+-- PRD §4: "Kunci membuka potongan bukti di meja." Node bukti tanpa `needs`
+-- terbuka sejak awal; node dengan `needs` menuntut SEMUA kuncinya sudah
+-- dipegang -- `needs` adalah daftar syarat, bukan pilihan.
+local GATED: { PuzzleTableService.Node } = {
+	{ id = "ev_open", type = "evidence", puzzle = "torn_doc", yields = "c1" },
+	{
+		id = "ev_locked",
+		type = "evidence",
+		puzzle = "cipher",
+		needs = { "key_a" },
+		yields = "c2",
+	},
+	{
+		id = "ev_two",
+		type = "evidence",
+		puzzle = "cipher",
+		needs = { "key_a", "key_b" },
+		yields = "c3",
+	},
+}
+
+local gatedBuilt = PuzzleTableService.build(service(), GATED, "v_curator", 16, 16, rng())
+Harness.equal(#gatedBuilt, 3, "tiga meja dibangun")
+
+local gated = service()
+for _, gateEntry in gatedBuilt do
+	PuzzleTableService.register(gated, gateEntry)
+end
+
+Harness.equal(
+	PuzzleTableService.get(gated, "ev_locked").needs,
+	{ "key_a" },
+	"`needs` ikut terbawa ke entry"
+)
+
+local noKeys: { [string]: boolean } = {}
+Harness.check(PuzzleTableService.isUnlocked(gated, "ev_open", noKeys), "meja tanpa needs terbuka")
+Harness.check(
+	not PuzzleTableService.isUnlocked(gated, "ev_locked", noKeys),
+	"meja berkunci tertutup tanpa kuncinya"
+)
+Harness.check(
+	PuzzleTableService.isUnlocked(gated, "ev_locked", { key_a = true }),
+	"kunci yang tepat membuka meja"
+)
+Harness.check(
+	not PuzzleTableService.isUnlocked(gated, "ev_locked", { key_b = true }),
+	"kunci yang salah tidak membuka meja"
+)
+Harness.check(
+	not PuzzleTableService.isUnlocked(gated, "ev_two", { key_a = true }),
+	"dua syarat butuh dua kunci"
+)
+Harness.check(
+	PuzzleTableService.isUnlocked(gated, "ev_two", { key_a = true, key_b = true }),
+	"dua syarat terbuka dengan dua kunci"
+)
+-- "Tidak ada" tidak sama dengan "terbuka": node tak dikenal tidak boleh lolos.
+Harness.check(
+	not PuzzleTableService.isUnlocked(gated, "ev_tidak_ada", { key_a = true }),
+	"node tak dikenal tidak dianggap terbuka"
+)
+
+-- `firstUnsolved` dan `firstAvailable` menjawab pertanyaan berbeda, dan
+-- perbedaan itu yang mencegah meja terkunci dikirim ke Handler.
+Harness.equal(
+	PuzzleTableService.firstUnsolved(gated).node_id,
+	"ev_open",
+	"firstUnsolved mengabaikan kunci"
+)
+Harness.equal(
+	PuzzleTableService.firstAvailable(gated, noKeys).node_id,
+	"ev_open",
+	"firstAvailable memilih meja terbuka pertama"
+)
+
+-- Selesaikan ev_open: meja berikutnya masih terkunci, jadi tidak ada yang
+-- tersedia walaupun masih ada meja belum selesai.
+local openEntry = PuzzleTableService.get(gated, "ev_open")
+for _, piece in openEntry.state.pieces do
+	PuzzleTableService.place(
+		gated,
+		"ev_open",
+		piece.id,
+		(piece.target.col + 0.5) / openEntry.state.board.cols,
+		(piece.target.row + 0.5) / openEntry.state.board.rows
+	)
+end
+Harness.check(openEntry.solved, "ev_open selesai")
+Harness.equal(
+	PuzzleTableService.firstAvailable(gated, noKeys),
+	nil,
+	"tidak ada meja terbuka yang tersisa tanpa kunci"
+)
+Harness.equal(
+	PuzzleTableService.firstUnsolved(gated).node_id,
+	"ev_locked",
+	"firstUnsolved masih melihat meja terkunci"
+)
+Harness.equal(
+	PuzzleTableService.firstAvailable(gated, { key_a = true }).node_id,
+	"ev_locked",
+	"kunci membuka meja berikutnya"
+)
+
 Harness.suite("PuzzleTableService: canPlace")
 
 Harness.check(PuzzleTableService.canPlace("Handler"), "Handler boleh menempatkan potongan")

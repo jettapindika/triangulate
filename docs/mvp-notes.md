@@ -1,18 +1,19 @@
-# Catatan MVP — minggu 0-1
+# Catatan MVP — minggu 0-2
 
 Rujukan: PRD v0.2 §15, §16, §17. Dokumen ini mencatat apa yang benar-benar
-jalan setelah minggu 0-1, apa yang belum, dan risiko teknis yang terbukti dari
+jalan setelah minggu 0-2, apa yang belum, dan risiko teknis yang terbukti dari
 spike — bukan daftar rencana.
 
-Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (967 assertion,
-19 berkas spec), `lune run tests/leak-sweep.spec.luau`, dan
-`lune run tools/spike-s02-protokol.luau`. Angka di bawah berasal dari ketiganya
-plus `docs/spike-minggu-0-hasil.md`.
+Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (1029 assertion,
+20 berkas spec), `lune run tests/leak-sweep.spec.luau`,
+`lune run tools/bukti-rantai-a.luau` (bukti rantai A→bukti, keluaran log
+berurutan), dan `lune run tools/spike-s02-protokol.luau`. Angka di bawah berasal
+dari keempatnya plus `docs/spike-minggu-0-hasil.md`.
 
-Angka 967 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main` ditambah
-EXTA-57 (minggu 4). Naik dari 566 karena tiga berkas spec baru (`location-map`,
-`case-content`, `puzzle-types`) dan perluasan `leak-sweep`, `ping`, serta
-`telemetry`; EXTA-57 menambahkan `tests/accusation-gate.spec.luau`.
+Angka 1029 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main`, EXTA-57
+(minggu 4), dan integrasi EXTA-55 (minggu 2: `CaseSource`, `LocationService`,
+`Location/init.luau`) yang menambahkan `case-source.spec` dan `location.spec`.
+Sebelumnya 967, dan 566 sebelum EXTA-57.
 
 ## 1. Apa yang sudah jalan
 
@@ -35,6 +36,12 @@ EXTA-57 (minggu 4). Naik dari 566 karena tiga berkas spec baru (`location-map`,
 | §7 Report Card tanpa mengetik | Searcher menekan Report → server memperkaya label + lokasi dari data kasus | `handleReport`; `NetClient.report(bound, objectId)` |
 | §7 Target Marker di HUD Searcher | Handler menandai target → `SetTarget` → `TargetMarker` + bearing kompas | `handleSetTarget`; `src/shared/LocationMap.luau` |
 | §5 gerbang deduksi & anti brute-force | Ambang N per tipe kasus; pinpoint deduksi diturunkan dari rantai, bukan ditulis di data | `CaseGraph.primaryOrigin`; `handleDeduce` |
+| §17 m2 loader kasus | Validasi dulu, lalu pilih varian dari seed, lalu proyeksi per role — satu jalur `CaseLoader.load(case, seed)` | `src/shared/case/CaseLoader.luau`; `src/server/CaseSource.luau`; `tools/bukti-rantai-a.luau` bagian 8 |
+| §4, §17 m2 satu rantai A→bukti end to end | `obj_schedule` → kunci `key_a` → meja `ev_schedule` (`torn_doc`) → Clue Card `clue_guard_off` di clue board Director | `tools/bukti-rantai-a.luau` langkah `[08]`–`[13]`, memakai `data/cases/gallery_01.json` |
+| §6, §17 m2 lokasi + objek bisa diperiksa | Tujuh objek rantai + dua ambient dibangun server ke `Workspace.TriangulateLocation`; tiap part membawa `object_id`, `label`, `kind`, `reachable`, `gated`, `action` | `buildWorld` di `src/server/init.server.luau`; `src/server/LocationService.luau` |
+| §6 mini-aksi Searcher | Senter UV (0 dtk), buka laci dengan hold (1,2 dtk), lockpick (2,5 dtk) | `Config.SEARCHER_ACTIONS`; durasi diverifikasi server terhadap jamnya, `LocationService.completeInspect` |
+| §6 objek ambient | `amb_poster` (uv) dan `amb_bench` (drawer), `gives_key = nil` | `LocationService.AMBIENT.gallery`; diuji di `tests/location.spec.luau` |
+| §4 langkah 6 gerbang `unlocks` | `obj_ledger` ada di dunia tetapi tidak bisa diperiksa sampai `ded_c_culprit_1` selesai | `LocationService.isInspectable`; log `deduksi 'ded_c_culprit_1' membuka objek 'obj_ledger'` |
 
 Ketiga tipe puzzle punya grid sendiri (`torn_doc` 4×4, `timeline` 4×2, `cipher`
 3×3) dan ketiganya kini dirakit **end to end** sampai `solved` di
@@ -70,7 +77,7 @@ ping wheel akan terhitung menganggur.
 
 ## 2. Apa yang belum
 
-### 2.1 Bukan scope minggu 0-1 (sesuai PRD §17)
+### 2.1 Bukan scope minggu 0-2 (sesuai PRD §17)
 
 - **Lobby, preferensi role, NPC, AFK/rejoin** — minggu 5. `Matchmaking`,
   `RoleAssignment`, dan `NPCController` sudah ada dan diuji, tetapi
@@ -91,6 +98,31 @@ lihat §2.4.
 
 ### 2.2 Jalan, tapi belum lengkap
 
+- **Mini-aksi Searcher: apa yang diverifikasi server, dan apa yang tidak.**
+  Client mengirim tiga pesan per objek — `begin` saat jari mulai menahan,
+  `cancel` saat jari diangkat, `complete` saat prompt terpicu — lewat remote
+  `Inspect`. Yang diperiksa server, semuanya di `src/server/LocationService.luau`:
+  objeknya ada di lokasi ini; objeknya sudah bisa diperiksa (`reachable` **dan**
+  seluruh gerbang `unlocks`-nya selesai); aksi yang dikirim cocok dengan aksi
+  objek itu; dan durasi tahan dihitung terhadap jam server sendiri
+  (`os.clock()`), sehingga `complete` yang datang 0,1 detik terlalu cepat
+  **ditolak** dengan alasan `aksi belum selesai`. Yang **tidak** diverifikasi:
+  apakah jari pemain benar-benar berada di dekat objek. Tidak ada pemeriksaan
+  jarak di server, karena posisi pemain direplikasi client dan tidak otoritatif
+  di server. Konsekuensinya seorang pengeksploitasi bisa mengirim
+  `{begin, complete}` untuk objek mana pun yang **sudah terbuka** tanpa
+  berjalan ke sana. Yang tidak bisa ia lakukan: membuka objek yang masih
+  bergerbang (`objek belum bisa dicapai`), memakai aksi yang salah, atau
+  mempersingkat durasi tahan. Ini batas yang diterima untuk MVP; menutupnya
+  berarti memindahkan pemeriksaan posisi ke server, dan itu pekerjaan minggu
+  berikutnya.
+- **Gerbang `unlocks` hanya sekuat `LocationService`.** Ia menurunkan peta
+  "deduksi mana membuka objek mana" dari array `nodes` yang sama, dengan
+  penyaring varian (`activeInVariant`) diterapkan saat bangun. Alasannya ada di
+  catatan kode: `CaseGraph.reachable` menjawab "ada di jalur yang hidup", bukan
+  "deduksi pembukanya sudah selesai" — dan `obj_ledger` di `gallery_01` adalah
+  kasus nyatanya. Kalau kelak ada sumber aturan kedua untuk gerbang ini, dua
+  sumber itu akan berbeda diam-diam.
 - **Aset gambar.** `Table.SHEET` masih `"rbxassetid://0"`. Selama placeholder,
   tiap potongan diberi latar warna dan nomor region supaya drag-and-snap bisa
   diverifikasi tanpa art. Mengunggah texture butuh akun Creator — di luar
@@ -98,9 +130,10 @@ lihat §2.4.
   tidak ada bagian lain yang perlu berubah.
 - **Kamera untuk Searcher.** `Table.mount` menyetel `CameraType = Scriptable`.
   Karena server hanya mengirim `puzzle_state` ke Handler dan Director, Searcher
-  tidak pernah memicu pemasangan meja — jadi kameranya tidak tersentuh. Kalau
-  kelak Searcher ikut membangun meja, ini akan merusak kamera first/third
-  person (PRD §3) dan harus dipisah lebih dulu.
+  tidak pernah memicu pemasangan meja — jadi kameranya tidak tersentuh.
+  `src/client/Location/init.luau` sengaja **tidak menyentuh `CameraType` sama
+  sekali**, dengan alasan yang sama: dua modul yang sama-sama menyetel kamera
+  akan saling menimpa saat satu pemain berganti role.
 
 ### 2.3 `ASUMSI` yang belum diverifikasi
 
@@ -220,13 +253,37 @@ Yang **belum** terukur: apakah drag terasa halus di ponsel. Itu butuh perangkat.
 Yang terbukti di sini adalah properti protokolnya — jumlah pesan dan
 kesepakatan prediksi — bukan pengalaman jari.
 
-## 4. Utang warisan yang tidak diperparah
+## 4. Utang warisan yang dibayar: satu nama, satu loader
 
-`src/shared/case/CaseLoader.luau` (murni, `selectVariant`) dan
-`src/server/CaseLoader.luau` (menyentuh `Instance`, `pickVariant`) masih
-koeksis — dua loader dengan kontrak berbeda (EXTA-54). Pekerjaan ini tidak
-menambah salinan ketiga: sisi server yang disentuh, dan `pickVariant` hanya
-dipecah agar varian bisa dipilih dari `roll` yang bisa diuji.
+Minggu 0-1 meninggalkan **dua** modul bernama `CaseLoader` dengan kontrak
+berbeda: `src/shared/case/CaseLoader.luau` (murni — validasi penuh, pilih varian
+dari seed, proyeksi per role) dan `src/server/CaseLoader.luau` (menyentuh
+`Instance` — membaca `ServerStorage.Cases`, `pickVariant`). Pembaca baru bisa
+salah `require`, dan pemilihan varian hidup di dua tempat.
+
+Minggu 2 menutupnya, dan **hanya dengan mengubah nama sisi server**:
+
+- `src/server/CaseLoader.luau` → **`src/server/CaseSource.luau`** (`git mv`,
+  sehingga riwayat berkasnya utuh). Nama `CaseSource` dipilih karena
+  tanggung jawabnya memang sumber data: folder mana yang dibaca, bentuk minimum
+  apa yang harus ada, dan kapan cache dibuang. Ia tidak lagi tahu apa pun
+  tentang varian.
+- **`pickVariant`/`pickVariantIndex` dihapus**, bukan dipindahkan. Varian
+  sekarang dipilih di **satu** tempat: `CaseLoader.load(case, seed)`.
+- Uji ikut berganti nama: `tests/case-loader.spec.luau` →
+  `tests/case-source.spec.luau`, dan entri di `tests/run.luau` menyesuaikan.
+
+Efeknya: `require` bernama `CaseLoader` di seluruh repo kini menunjuk modul
+murni itu saja. Satu nama, satu kontrak.
+
+**Bug nyata yang ketahuan saat menggabungkan keduanya.** `needs` bersifat
+polimorfik: pada node `evidence` ia berisi **kunci** (`"key_a"`), pada node
+`deduction` ia berisi **id node** (`"clue_guard_off"`). Pemeriksaan bentuk di
+`CaseSource.shapeProblems` sebelumnya memakai satu himpunan untuk keduanya, jadi
+`ev_schedule` yang membutuhkan kunci `key_a` dilaporkan "membutuhkan node
+'key_a' yang tidak ada". Sekarang ia membangun dua himpunan (`ids` dan `keys`)
+dan memilih yang benar menurut jenis node. Ini yang membuat kasus yang sah tidak
+lagi ditolak sebelum sesi mulai.
 
 ## 5. Cacat yang ketahuan dan diperbaiki di minggu 6
 
@@ -270,7 +327,8 @@ dihapus dari payload proyeksi.
 rusak, tetapi **tidak** menyentuh `case_00.json` maupun `kersana_01.json`. Jadi
 sebelum ini kedua kasus minggu 6 hanya dijaga oleh perintah CLI manual: rusak
 satu berkas, suite tetap hijau. Dua baris ditambahkan ke tabel `expectations`
-supaya keduanya ikut digerbang (869 assertion saat itu; 967 setelah EXTA-57).
+supaya keduanya ikut digerbang (869 assertion saat itu; 1029 sekarang, setelah
+EXTA-57 dan integrasi EXTA-55).
 
 Celah yang sama masih ada di tempat lain: `tools/validate_case.luau` menerima
 daftar berkas dari argumen, jadi kasus baru **tidak** otomatis ikut kecuali
@@ -290,8 +348,11 @@ namanya ditambahkan. Tidak ada penemuan berkas otomatis atas `data/cases/`.
    pesan datang terlambat.
 4. **Ganti koordinat `LocationMap`** dengan denah lokasi nyata (§2.3). Spec-nya
    sudah menguji semantik bearing, jadi penggantian angka tidak menyentuh uji.
-5. **Minggu 7**: playtest 3 pemain nyata di mobile, tuning idle time terhadap
+5. **Periksa jarak pemeriksaan di server** (§2.2). Menutup celah "kirim
+   `begin`+`complete` tanpa berjalan ke objek" menuntut posisi pemain yang
+   otoritatif di server, bukan yang direplikasi client.
+6. **Minggu 7**: playtest 3 pemain nyata di mobile, tuning idle time terhadap
    ambang PRD §12 (`< 25%`). Ini juga yang memvalidasi `key_deductions` N=4
    untuk kasus standar (PRD §19).
-6. **Minggu 5**: isi pemanggil lobby/ready check/NPC yang sudah bernama di
+7. **Minggu 5**: isi pemanggil lobby/ready check/NPC yang sudah bernama di
    `src/server/init.server.luau` bagian 7.
