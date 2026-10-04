@@ -354,11 +354,11 @@ Di `/Users/mac/Documents/Roblox/.probe/s01_out/` (di luar repo, tidak masuk git)
 Skrip: `/Users/mac/Documents/Roblox/.probe/s01_resolusi.py` (pengukuran utama),
 `/Users/mac/Documents/Roblox/.probe/s01_gutter_probe.py` (sapuan lebar gutter).
 
-Pemeriksaan visual gambar tidak dapat dilakukan di lingkungan ini (tidak ada
-model visi, tidak ada Studio). Sebagai gantinya, panel selisih tiap berkas
-`banding_*` diukur numerik. Berkas itu hanya memuat 20 baris teratas pita batas
-sel (0,0)|(1,0), jadi puncaknya tidak selalu sama dengan `puncak_maks` tabel 1
-yang menyapu seluruh potongan. Yang terukur di panel selisih, 256 → 512 bilinear:
+Pemeriksaan mata di perangkat tidak dapat dilakukan di lingkungan ini. Sebagai
+gantinya, panel selisih tiap berkas `banding_*` diukur numerik. Berkas itu hanya
+memuat 20 baris teratas pita batas sel (0,0)|(1,0), jadi puncaknya tidak selalu
+sama dengan `puncak_maks` tabel 1 yang menyapu seluruh potongan. Yang terukur di
+panel selisih, 256 → 512 bilinear:
 **141,5 (C)** vs **26,0 (A)** dan **27,0 (B)**. Urutannya tetap C paling parah,
 sesuai tabel 1. (Pada PNG, penguatan 8× membuat panel C jenuh di 255 — artinya
 selisih aslinya ≥ 32, bukan berarti hanya 32.) Pita yang tampak lebar (24 kolom
