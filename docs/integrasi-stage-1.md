@@ -286,7 +286,7 @@ Keluaran `lune run tests/run.luau` (ekor):
 
 == Tiga tipe puzzle: payload tidak membocorkan target
 
-1055 assertion, 0 gagal
+1099 assertion, 0 gagal
 SEMUA LULUS
 ```
 

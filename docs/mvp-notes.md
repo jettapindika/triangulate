@@ -4,17 +4,19 @@ Rujukan: PRD v0.2 §15, §16, §17. Dokumen ini mencatat apa yang benar-benar
 jalan setelah minggu 0-2, apa yang belum, dan risiko teknis yang terbukti dari
 spike — bukan daftar rencana.
 
-Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (1055 assertion,
+Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (1099 assertion,
 20 berkas spec), `lune run tests/leak-sweep.spec.luau`,
 `lune run tools/bukti-rantai-a.luau` (bukti rantai A→bukti, keluaran log
-berurutan), dan `lune run tools/spike-s02-protokol.luau`. Angka di bawah berasal
-dari keempatnya plus `docs/spike-minggu-0-hasil.md`.
+berurutan), `lune run tools/spike-s02-protokol.luau`,
+`lune run tools/idle-reduce.luau`, dan `lune run tools/playtest-report.luau`.
+Angka di bawah berasal dari keenamnya plus `docs/spike-minggu-0-hasil.md`.
 
-Angka 1055 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main`, EXTA-57
-(minggu 4), dan integrasi EXTA-55 (minggu 2: `CaseSource`, `LocationService`,
+Angka 1099 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main`, EXTA-57
+(minggu 4), integrasi EXTA-55 (minggu 2: `CaseSource`, `LocationService`,
 `Location/init.luau`, `case-source.spec`, `location.spec`) + EXTA-56 (clue board
-Director, `accusation-gate.spec`). Sebelumnya 1029, 967 sebelum itu, dan 566
-saat catatan ini pertama ditulis.
+Director, `accusation-gate.spec`), dan EXTA-60 (instrumen playtest minggu 7:
+fixture `docs/metrics/fixtures/`). Sebelumnya 1055, 1029 sebelum itu, 967
+sebelum itu, dan 566 saat catatan ini pertama ditulis.
 
 ## 1. Apa yang sudah jalan
 
@@ -28,7 +30,7 @@ saat catatan ini pertama ditulis.
 | §15 server-authoritative | Resep deduksi, penilaian tuduhan, dan penyelesaian meja semuanya di server | `src/server/init.server.luau`; `tests/leak-sweep.spec.luau` 34 pasangan view×role, 0 temuan |
 | §4 Clue Card dari bukti | Meja selesai → `yields` → `ClueCard` ke Director, Handler, Searcher dengan proyeksi per role | `handlePlacePiece`, `src/server/init.server.luau:547` |
 | §16 data-driven | Tipe puzzle dibaca dari `data/cases/gallery_01.json`; menambah kasus tidak menyentuh kode | `PuzzleTableService.build` |
-| §15 telemetri | Event `input` per penempatan potongan, plus `input` untuk ping dan `deduction` untuk deduksi; `variant` ikut tercatat per sesi | `TelemetryService.record` di `handlePlacePiece`, `handlePing`, `handleDeduce`; `TelemetryService.summary().variant` |
+| §15 telemetri | Event `input` per penempatan potongan, plus `input` untuk ping dan `deduction` untuk deduksi; `idle_start`/`idle_end` dihitung menurut `kamus-metrik.md` §1.3; `variant` ikut tercatat per sesi | `TelemetryService.record` di `handlePlacePiece`, `handlePing`, `handleDeduce`; `TelemetryService.summary().variant`; `tests/telemetry.spec.luau` |
 | §9 Case 0 | `data/cases/case_00.json` — 9 node, 3 rantai, ketiga tipe puzzle, `key_deductions` 2 | `lune run tools/validate_case.luau -- data/cases/case_00.json` → LULUS; `tests/puzzle-types.spec.luau` (tiga tipe end to end); `tests/location-map.spec.luau` (`origins` deduksi) |
 | §10 story case + varian | `data/cases/kersana_01.json` — 22 node, 10 deduksi, 2 varian (`v_rani`, `v_bowo`) | validator LULUS; `tests/case-content.spec.luau` suite seed & pernyataan |
 | §10 pemilihan varian dari seed | `selectVariant` deterministik; 128 seed uji menjangkau kedua varian | `tests/case-content.spec.luau` suite "seed memilih varian" |
@@ -148,8 +150,8 @@ lihat §2.4.
 
 | `ASUMSI` | Nilai | Yang akan mengonfirmasi |
 |---|---|---|
-| Ukuran meja | `Config.TABLE_WIDTH`/`TABLE_HEIGHT` = 16×16 stud | Playtest minggu 7 |
-| Radius genggam | `Table.GRAB_RADIUS` = 1,2 sel | Playtest minggu 7; uji jari nyata di ponsel |
+| Ukuran meja | `Config.TABLE_WIDTH`/`TABLE_HEIGHT` = 16×16 stud | Playtest minggu 7 — **belum terjawab**, sesi belum jalan (§5) |
+| Radius genggam | `Table.GRAB_RADIUS` = 1,2 sel | Playtest minggu 7; uji jari nyata di ponsel — **belum terjawab** |
 | Laju interpolasi | `PuzzleTable.INTERPOLATION_RATE` = 12 pangsa/detik | Pengukuran jank di perangkat |
 | Perangkat mobile kelas bawah | **BELUM TERUKUR** | Uji di Android kelas bawah (tidak ada perangkat di lingkungan ini) |
 | Latensi jaringan nyata | **BELUM DIUJI** | Uji 100 ms dan 300 ms + packet loss, sesuai metode S0.2 |
@@ -336,32 +338,96 @@ dihapus dari payload proyeksi.
 rusak, tetapi **tidak** menyentuh `case_00.json` maupun `kersana_01.json`. Jadi
 sebelum ini kedua kasus minggu 6 hanya dijaga oleh perintah CLI manual: rusak
 satu berkas, suite tetap hijau. Dua baris ditambahkan ke tabel `expectations`
-supaya keduanya ikut digerbang (869 assertion saat itu; 1055 sekarang, setelah
+supaya keduanya ikut digerbang (869 assertion saat itu; 1099 sekarang, setelah
 EXTA-57, integrasi EXTA-55, dan EXTA-56).
 
 Celah yang sama masih ada di tempat lain: `tools/validate_case.luau` menerima
 daftar berkas dari argumen, jadi kasus baru **tidak** otomatis ikut kecuali
 namanya ditambahkan. Tidak ada penemuan berkas otomatis atas `data/cases/`.
 
-## 6. Langkah berikutnya, terurut
+## 6. Playtest minggu 7 — instrumen siap, sesi belum jalan
 
-1. **Putuskan runtime SOP-05** (§2.4). Kasus Case 0-nya sudah ada dan lolos
+Gate minggu 7 (PRD §17: idle < 25% per role, selesai > 55%) **belum bisa dinilai** — belum ada
+satu sesi 3 pemain nyata dijalankan. Yang selesai di sini adalah sisi instrumennya.
+
+Paket instrumen ada di `docs/playtest/minggu-7/`: `skrip-sesi.md` (skrip pembuka + lembar A1-A7
+siap cetak, mengisi SOP-04 dan Lampiran A tanpa menulis ulang langkahnya), `ekspor-telemetri.md`
+(dua bentuk masukan, mengikuti `skema-event-telemetri.md`), `lembar-hasil.md` (kolom angka +
+keputusan gate), `README.md` (indeks + daftar celah), `laporan.md` (laporan terukur: validasi
+instrumen, celah, evaluasi gate, tuning before/after). Dua alat membaca hasilnya:
+
+| Alat | Yang dibuktikan |
+|---|---|
+| `tools/idle-reduce.luau` | menghitung ulang `idle_time_role_ms`/`idle_ratio` dari aliran input menurut §1.3, dan mereproduksi **seluruh** angka §4 kamus-metrik pada fixture: Searcher 75 000 ms / 3 run / 13,9%, Handler 80 000 / 2 / 14,8%, Director 120 000 / 2 / 22,2%; peringkat role stabil di ambang 3/5/10 detik |
+| `tools/playtest-report.luau` | membaca ekspor JSONL skema §2 dan mencetak tabel gate (M-03, M-04, M-06, M-08, M-09); mencetak `TIDAK ADA DATA` + butir penghalang §6 untuk metrik tanpa sumber, bukan `0` |
+
+### 6.1 Divergensi yang terbukti dan sudah diperbaiki
+
+`TelemetryService` sebelumnya memakai definisi idle yang **berbeda** dari `kamus-metrik.md` §1.3:
+jendela keaktifan 5 detik, union `[t, t+5]`, `idleFraction = 1 - aktif/durasi`, dengan
+`durasi = untilT - session.startedAt`. Tiga hal berbeda sekaligus — satuan (detik vs ms), bentuk
+algoritma (union jendela vs bucket 1 detik), dan titik nol (start sesi vs `case_started`).
+
+Angka atas fixture yang sama, kode lama dijalankan apa adanya:
+
+| Role | Lama, penyebut start sesi | Lama, penyebut `case_started` | §1.3 (sekarang) |
+|---|---|---|---|
+| Searcher | 20,3673% | 11,6667% | **13,9%** |
+| Handler | 21,8698% | 13,3333% | **14,8%** |
+| Director | **28,5476%** | 20,7407% | **22,2%** |
+
+Baris Director adalah yang penting: dengan penyebut start sesi — yaitu `startedAt` yang benar-benar
+dipakai `init.server.luau` saat itu — Director **gagal** gate < 25%, sementara definisi §1.3
+memberi 22,2% dan lulus. Satu bug definisi bisa membalik putusan gate.
+
+Perbaikan: `TelemetryService` ditulis ulang ms-native mengikuti §1.3, `init.server.luau` memakai
+`telemetryMs()` (ms) untuk telemetri dan `os.clock()` (detik) untuk rank/durasi, dan
+`tests/telemetry.spec.luau` ditulis ulang. Assertion lama yang mem-pin definisi
+union-jendela **dihapus**, bukan di-pin ulang ke angka baru.
+
+### 6.2 Celah yang terbuka (bukan hasil)
+
+| ID | Celah | Dampak |
+|---|---|---|
+| C-1 | Event tercatat di `session.telemetry`, tetapi belum ada sink — `TelemetryService.record` mengisi tabel, tidak ada yang menuliskannya ke DataStore/AnalyticsService | semua M-03/M-04/M-06/M-08/M-09 `TIDAK ADA DATA` (butir §6 G2-G5) |
+| C-2 | Kelas input bermakna §1.1 tidak ada sebagai kolom di skema event maupun di `src/` | penyaring §1.1 belum bisa dijalankan atas lalu lintas sungguhan |
+| C-3 | Tidak ada perangkat mobile dan tidak ada pemain luar tim di lingkungan ini | sesi 3 pemain nyata tidak bisa dijalankan |
+| C-4 | Roblox Studio tidak bisa diotomasi (§2.3) | tiap sesi butuh manusia |
+| C-5 | Timer *cleanup* (PRD §6) sudah punya implementasi (`AccusationGate.cleanupSecondsLeft`, `Config.CLEANUP_SECONDS = 90`), tetapi durasinya (§19) belum punya dasar playtest | durasi cleanup (§19) belum tervalidasi |
+| C-6 | `par_time_s` tidak ada di `data/cases/gallery_01.json` | M-13 rank tidak bisa dihitung (butir §6 G6) |
+
+Karena C-1, SOP-04 langkah 2 ("jangan jalankan sesi tanpa instrumen") belum lulus — sesi yang
+tetap dijalankan berstatus latihan, bukan data gate.
+
+### 6.3 Divergensi yang dilaporkan, belum diubah
+
+`AccusationService.rank` memakai ambang scaffold (`percobaan ≤ 1` dan `hint = 0` → S, dst.),
+sementara `kamus-metrik.md` §3 mendefinisikan rubrik tier-per-komponen dengan rank = tier
+terburuk. Keduanya menghasilkan angka berbeda pada sesi yang sama. Yang dipakai kode hari ini
+adalah scaffold; komentarnya sudah menyebut dirinya bukan angka PRD. Belum diubah karena rubrik §3
+sendiri berlabel `ASUMSI` dan bergantung pada `par_time_s` yang belum ada (C-6).
+
+## 7. Langkah berikutnya, terurut
+
+1. **Tutup C-1 dan C-2** — sink telemetri + pemancar per event, dan kolom kelas input §1.1.
+   Tanpa keduanya gate minggu 7 tidak bisa dinilai, seberapa pun rapi instrumennya.
+2. **Putuskan runtime SOP-05** (§2.4). Kasus Case 0-nya sudah ada dan lolos
    validator; yang hilang adalah mentor NPC, tawaran, flag selesai, dan rookie
    mode. Ini butuh keputusan pemilik karena SOP-05 menugaskannya tetapi PRD §16
    tidak menyebut mentor NPC sebagai komponen MVP.
-2. **Uji gutter 4–6 px di perangkat** saat art pertama ada (§3.1). Ini yang
+3. **Uji gutter 4–6 px di perangkat** saat art pertama ada (§3.1). Ini yang
    paling murah dan paling berisiko kalau ditunda — kalau 1 px memang kurang,
    seluruh pipeline sheet berubah.
-3. **Uji S0.2 dengan latensi buatan** 100 ms dan 300 ms + packet loss, di
+4. **Uji S0.2 dengan latensi buatan** 100 ms dan 300 ms + packet loss, di
    perangkat. Angka pesan sudah lulus; yang belum diuji adalah perilaku saat
    pesan datang terlambat.
-4. **Ganti koordinat `LocationMap`** dengan denah lokasi nyata (§2.3). Spec-nya
+5. **Ganti koordinat `LocationMap`** dengan denah lokasi nyata (§2.3). Spec-nya
    sudah menguji semantik bearing, jadi penggantian angka tidak menyentuh uji.
-5. **Periksa jarak pemeriksaan di server** (§2.2). Menutup celah "kirim
+6. **Periksa jarak pemeriksaan di server** (§2.2). Menutup celah "kirim
    `begin`+`complete` tanpa berjalan ke objek" menuntut posisi pemain yang
    otoritatif di server, bukan yang direplikasi client.
-6. **Minggu 7**: playtest 3 pemain nyata di mobile, tuning idle time terhadap
+7. **Minggu 7**: playtest 3 pemain nyata di mobile, tuning idle time terhadap
    ambang PRD §12 (`< 25%`). Ini juga yang memvalidasi `key_deductions` N=4
    untuk kasus standar (PRD §19).
-7. **Minggu 5**: isi pemanggil lobby/ready check/NPC yang sudah bernama di
+8. **Minggu 5**: isi pemanggil lobby/ready check/NPC yang sudah bernama di
    `src/server/init.server.luau` bagian 7.

@@ -282,7 +282,7 @@ Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 `Instance` ada di `CaseSource.shapeProblems` dan `CaseSource.load`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 1055 assertion berjalan dalam waktu di bawah satu
+Studio dan tanpa Roblox.** 1099 assertion berjalan dalam waktu di bawah satu
 detik (`tests/run.luau`, 20 berkas spec). Untuk game yang aturan menang-kalahnya
 serumit PRD §5 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank
 S/A/B/C), itu perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio
@@ -438,7 +438,7 @@ dengan `.github/workflows/ci.yml`.
 
 | Perintah | Hasil |
 |---|---|
-| `lune run tests/run.luau` | **1055 assertion, 0 gagal** — 20 berkas spec |
+| `lune run tests/run.luau` | **1099 assertion, 0 gagal** — 20 berkas spec |
 | `selene --config selene.toml .` | **0 errors, 0 warnings, 0 parse errors** |
 | `stylua --config-path stylua.toml --check .` | **bersih** (exit 0) |
 | `luau-analyze --mode=strict` atas 19 modul murni | **0 diagnostik** |
