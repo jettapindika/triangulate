@@ -1,8 +1,16 @@
 # Toolchain proyek, dipin per versi. Bentuk "<owner>/<repo>@<version>" sesuai
 # dokumentasi Roblox "Third-party tools" dan body rilis Rojo v7.7.1.
 # Pasang dengan: rokit install
+#
+# Versi di sini HARUS sama dengan `env.*` di .github/workflows/ci.yml, supaya
+# workstation dan CI tidak pernah memformat/lint dengan aturan berbeda.
+# Rujukan: docs/ci/03-pipeline-ci.md §2.
+#
+# `luau-lsp` ditambahkan oleh EXTA-34 karena job `analyze` membutuhkannya.
+# Sisanya sudah ada sejak scaffold EXTA-32 dan versinya tidak diubah.
 [tools]
 rojo = "rojo-rbx/rojo@7.7.1"
 stylua = "JohnnyMorganz/StyLua@2.5.2"
 selene = "Kampfkarren/selene@0.32.0"
 lune = "lune-org/lune@0.10.5"
+luau-lsp = "JohnnyMorganz/luau-lsp@1.70.1"

@@ -1,8 +1,34 @@
-std = "roblox"
+# Konfigurasi selene — dipakai CI dan sebaiknya dipakai editor lokal.
+# Rujukan: docs/ci/03-pipeline-ci.md · PRD §15, §17
+#
+# Dijalankan di CI sebagai:
+#   selene --config selene.toml .
+#
+# PENTING: sebelum `selene` dijalankan, CI wajib menjalankan
+#   selene generate-roblox-std
+# yang menulis roblox.yml di direktori kerja. Tanpa berkas itu, selene
+# mengunduh API dump Roblox dari jaringan; bila jaringan diblokir, selene
+# gagal total dengan "failed to collect roblox standard library".
+# roblox.yml adalah artefak turunan dan tidak boleh di-commit.
 
+# "luau+roblox" dipilih, bukan "roblox" saja, karena repo memuat DUA gaya
+# require: gaya Roblox di src/ (require(Shared.Config)) dan gaya path relatif
+# gaya Lune di tests/ dan tools/ (require("../src/...")).
+# Urutan penting: "luau" harus di depan. "roblox+luau" gagal pada require
+# gaya Lune (incorrect_standard_library_use).
+#
+# Diuji 2026-10-04 pada pohon main apa adanya:
+#   std = "roblox"       -> 33 errors, exit 1  (semua require di tests/)
+#   std = "luau+roblox"  ->  0 errors, exit 0
+std = "luau+roblox"
+
+# Berkas Rojo/build tidak ikut di-lint.
 exclude = ["build/**", ".rojo/**"]
 
 [lints]
+# Boleh: penamaan ulang variabel lokal yang disengaja (idiom Luau umum).
 shadowing = "allow"
+# Beberapa statement per baris ditolak.
 multiple_statements = "deny"
+# Peringatan tetap memblokir CI karena CI tidak memakai --allow-warnings.
 unused_variable = "warn"

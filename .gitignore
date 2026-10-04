@@ -1,3 +1,4 @@
+# Roblox build artifacts
 *.rbxl
 *.rbxlx
 *.rbxm
@@ -7,5 +8,21 @@ build/
 *.lock
 .DS_Store
 
-# Dihasilkan `rojo sourcemap`. Konsumennya luau-lsp; tidak perlu masuk repo.
+# Artefak turunan toolchain — dibuat ulang oleh CI, jangan di-commit.
+# roblox.yml     : keluaran `selene generate-roblox-std` (berisi timestamp, non-deterministik)
+# sourcemap.json : keluaran `rojo sourcemap`, konsumennya luau-lsp
+roblox.yml
 sourcemap.json
+
+# Secrets — lihat docs/ci/04-manajemen-secret.md
+.env
+.env.*
+*.env
+*.env.*
+*.local.luau
+*.local.json
+secrets.json
+secrets/
+*.pem
+*.key
+!.env.example

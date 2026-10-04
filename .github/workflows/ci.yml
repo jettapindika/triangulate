@@ -1,0 +1,315 @@
+# Pipeline CI Triangulate — DRAFT, belum aktif.
+# Rujukan: docs/ci/03-pipeline-ci.md · PRD §15 (Persyaratan Teknis), §17 (Roadmap), §10 (kasus sebagai data)
+#
+# Workflow ini TIDAK berjalan sampai repository variable CI_ENABLED bernilai "true".
+# Selama itu seluruh job di-skip, dan job yang di-skip TIDAK menghabiskan menit Actions.
+#
+#   Aktifkan : gh variable set CI_ENABLED --body true --repo jettapindika/triangulate
+#   Matikan  : gh variable delete CI_ENABLED --repo jettapindika/triangulate
+#
+# Guard `vars.CI_ENABLED == 'true'` dipasang di tingkat JOB.
+# Guard `hashFiles(...)` dipasang di tingkat STEP, karena `hashFiles` tidak
+# tersedia pada `jobs.<job_id>.if` (context yang diizinkan di sana hanya
+# github, needs, vars, inputs).
+#
+# Rantai `needs` sengaja berurutan supaya kegagalan termurah muncul lebih dulu:
+#   lint -> analyze -> test -> validate-case
+#
+# Biaya menit Actions pada repo private: ESKALASI -> Michelle — CFO
+# (lihat docs/ci/03-pipeline-ci.md §7).
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# GITHUB_TOKEN read-only. Pipeline ini tidak menulis apa pun ke repo.
+permissions:
+  contents: read
+
+# Push berturut-turut ke branch yang sama membatalkan run sebelumnya, supaya
+# menit tidak terbuang untuk revisi yang sudah usang.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tag rilis dipakai apa adanya. StyLua dan lune memakai awalan "v";
+  # selene dan luau-lsp tidak. Tidak ada "latest" di mana pun.
+  #
+  # Versi ini SAMA dengan `rokit.toml` (dan dengan pin di branch EXTA-32),
+  # supaya CI dan workstation tidak pernah memformat/lint dengan aturan
+  # berbeda. Diuji 2026-10-04 pada pohon gabungan EXTA-32 + EXTA-34:
+  # stylua/selene/lune ketiganya exit 0.
+  STYLUA_TAG: v2.5.2
+  SELENE_TAG: 0.32.0
+  LUAU_LSP_TAG: 1.70.1
+  LUNE_TAG: v0.10.5
+  ROJO_TAG: v7.7.1
+
+  # SHA-256 arsip rilis Linux x86_64, diverifikasi dengan `shasum -a 256 -c`
+  # saat dokumen ini disusun. Lihat docs/ci/03-pipeline-ci.md §6.
+  STYLUA_SHA256: bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
+  SELENE_SHA256: d3773393578580074386e69337d35b7acddfbaa9fc38964c07fa3e28436ade9b
+  LUAU_LSP_SHA256: 1a2ea1ae4f98f8946cefd970a4b54853e11ab4775e6932faa7f60cf920346567
+  LUNE_SHA256: 1fb5dee6a1afa1d300092805c6e660fe06144d29dd68c45cf6956f040667f791
+  ROJO_SHA256: 00feb4fa0829a1dd72b49df2639da519a352bfe13cadcd83969e2ba2bb5693c4
+
+  # Definisi Luau untuk luau-lsp, dipin ke tag 1.70.1.
+  LUAU_DEFS_SHA256: 2857efa8245485f8c25c19c018ee1ef9b46afab4efd2ea70fc3257cd3faf7080
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # lint — format (stylua) lalu lint (selene). Job pertama; sisanya bergantung
+  # padanya supaya kegagalan paling murah muncul paling awal.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    if: vars.CI_ENABLED == 'true'
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Cache toolchain
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/luau-tools
+          key: luau-tools-${{ runner.os }}-stylua-${{ env.STYLUA_TAG }}-selene-${{ env.SELENE_TAG }}
+
+      - name: Pasang stylua + selene
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luau-tools/bin"
+          cd "$RUNNER_TEMP/luau-tools"
+          curl -sSL -o stylua-linux-x86_64.zip \
+            "https://github.com/JohnnyMorganz/StyLua/releases/download/${STYLUA_TAG}/stylua-linux-x86_64.zip"
+          curl -sSL -o "selene-${SELENE_TAG}-linux.zip" \
+            "https://github.com/Kampfkarren/selene/releases/download/${SELENE_TAG}/selene-${SELENE_TAG}-linux.zip"
+          printf '%s  %s\n' \
+            "$STYLUA_SHA256" stylua-linux-x86_64.zip \
+            "$SELENE_SHA256" "selene-${SELENE_TAG}-linux.zip" > checksums.txt
+          sha256sum -c checksums.txt
+          unzip -o -q stylua-linux-x86_64.zip -d bin
+          unzip -o -q "selene-${SELENE_TAG}-linux.zip" -d bin
+          chmod +x bin/stylua bin/selene
+          rm -f ./*.zip checksums.txt
+
+      - name: Tambahkan toolchain ke PATH
+        run: echo "$RUNNER_TEMP/luau-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Format — stylua
+        run: stylua --config-path stylua.toml --check .
+
+      # Tanpa langkah ini selene mengunduh API dump Roblox dari jaringan.
+      # Bila jaringan diblokir, selene gagal total: "failed to collect roblox
+      # standard library". roblox.yml adalah artefak turunan, tidak di-commit.
+      - name: Bangun standard library Roblox untuk selene
+        run: selene generate-roblox-std
+
+      - name: Lint — selene
+        run: selene --config selene.toml .
+
+  # ---------------------------------------------------------------------------
+  # analyze — analisis tipe statis. Membutuhkan src/ dan default.project.json
+  # (keduanya milik EXTA-32, Nathan — CTO/CIO). Selama belum ada, langkah
+  # analisis dilewati dengan notice; job tetap hijau.
+  # ---------------------------------------------------------------------------
+  analyze:
+    name: analyze
+    runs-on: ubuntu-latest
+    needs: lint
+    if: vars.CI_ENABLED == 'true'
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Cache toolchain
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/luau-tools
+          key: luau-tools-${{ runner.os }}-luau-lsp-${{ env.LUAU_LSP_TAG }}-rojo-${{ env.ROJO_TAG }}
+
+      - name: Pasang luau-lsp + rojo
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luau-tools/bin"
+          cd "$RUNNER_TEMP/luau-tools"
+          curl -sSL -o luau-lsp-linux-x86_64.zip \
+            "https://github.com/JohnnyMorganz/luau-lsp/releases/download/${LUAU_LSP_TAG}/luau-lsp-linux-x86_64.zip"
+          curl -sSL -o "rojo-${ROJO_TAG#v}-linux-x86_64.zip" \
+            "https://github.com/rojo-rbx/rojo/releases/download/${ROJO_TAG}/rojo-${ROJO_TAG#v}-linux-x86_64.zip"
+          printf '%s  %s\n' \
+            "$LUAU_LSP_SHA256" luau-lsp-linux-x86_64.zip \
+            "$ROJO_SHA256" "rojo-${ROJO_TAG#v}-linux-x86_64.zip" > checksums.txt
+          sha256sum -c checksums.txt
+          unzip -o -q luau-lsp-linux-x86_64.zip -d bin
+          unzip -o -q "rojo-${ROJO_TAG#v}-linux-x86_64.zip" -d bin
+          chmod +x bin/luau-lsp bin/rojo
+          rm -f ./*.zip checksums.txt
+
+      - name: Tambahkan toolchain ke PATH
+        run: echo "$RUNNER_TEMP/luau-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Unduh definisi Luau (tag terpin)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luau-tools/defs"
+          cd "$RUNNER_TEMP/luau-tools/defs"
+          curl -sSL -o globalTypes.d.luau \
+            "https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/${LUAU_LSP_TAG}/scripts/globalTypes.d.luau"
+          printf '%s  %s\n' "$LUAU_DEFS_SHA256" globalTypes.d.luau > checksums.txt
+          sha256sum -c checksums.txt
+
+      - name: Lewati analisis — src/ belum ada
+        if: hashFiles('src/**/*.luau') == ''
+        run: echo "::notice::src/**/*.luau belum ada (menunggu EXTA-32). Job analyze tidak menganalisis apa pun."
+
+      - name: Rojo sourcemap
+        if: hashFiles('default.project.json') != '' && hashFiles('src/**/*.luau') != ''
+        run: rojo sourcemap default.project.json --output sourcemap.json
+
+      # `continue-on-error` SENGAJA dipasang, dan SENGAJA dilepas nanti.
+      #
+      # Diuji 2026-10-04 pada pohon gabungan EXTA-32 + EXTA-34: luau-lsp
+      # menemukan 8 galat tipe nyata di src/ milik EXTA-32 (Nathan —
+      # CTO/CIO) di bawah `languageMode: strict`. src/ bukan milik PR ini,
+      # jadi PR ini tidak memperbaikinya dan tidak boleh memblokir
+      # merge-nya sendiri karenanya.
+      #
+      # Karena `test` dan `validate-case` bergantung pada `analyze` lewat
+      # `needs`, langkah ini HARUS tidak menggagalkan job-nya — kalau ia
+      # merah, seluruh sisa pipeline ikut ter-skip.
+      #
+      # LEPAS `continue-on-error` begitu 8 galat itu beres. Rinciannya di
+      # docs/ci/03-pipeline-ci.md §3.5.
+      - name: Analisis tipe — luau-lsp
+        id: analyze
+        continue-on-error: true
+        if: hashFiles('src/**/*.luau') != ''
+        run: |
+          luau-lsp analyze \
+            --definitions="$RUNNER_TEMP/luau-tools/defs/globalTypes.d.luau" \
+            --sourcemap=sourcemap.json \
+            --base-luaurc=.luaurc \
+            src
+
+      # Galat tipe yang ditemukan tetap terlihat sebagai anotasi di PR,
+      # tanpa mewarnai job merah. Anotasi inilah sinyalnya sampai
+      # `continue-on-error` dilepas.
+      - name: Laporkan galat tipe
+        if: steps.analyze.outcome == 'failure'
+        run: |
+          echo "::warning title=luau-lsp analyze::luau-lsp menemukan galat tipe di src/. Lihat log langkah 'Analisis tipe — luau-lsp'. Langkah ini belum memblokir merge (docs/ci/03-pipeline-ci.md §3.5)."
+
+  # ---------------------------------------------------------------------------
+  # test — runner uji Luau berbasis lune. Jalur masuk yang diharapkan:
+  # tests/run.luau. Berkas itu belum ada; job ini menyiapkan cara menjalankannya,
+  # bukan mengarang uji.
+  # ---------------------------------------------------------------------------
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: vars.CI_ENABLED == 'true'
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Cache toolchain
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/luau-tools
+          key: luau-tools-${{ runner.os }}-lune-${{ env.LUNE_TAG }}
+
+      - name: Pasang lune
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luau-tools/bin"
+          cd "$RUNNER_TEMP/luau-tools"
+          curl -sSL -o "lune-${LUNE_TAG#v}-linux-x86_64.zip" \
+            "https://github.com/lune-org/lune/releases/download/${LUNE_TAG}/lune-${LUNE_TAG#v}-linux-x86_64.zip"
+          printf '%s  %s\n' "$LUNE_SHA256" "lune-${LUNE_TAG#v}-linux-x86_64.zip" > checksums.txt
+          sha256sum -c checksums.txt
+          unzip -o -q "lune-${LUNE_TAG#v}-linux-x86_64.zip" -d bin
+          chmod +x bin/lune
+          rm -f ./*.zip checksums.txt
+
+      - name: Tambahkan toolchain ke PATH
+        run: echo "$RUNNER_TEMP/luau-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Lewati uji — tests/run.luau belum ada
+        if: hashFiles('tests/run.luau') == ''
+        run: echo "::notice::tests/run.luau belum ada. Job test tidak menjalankan uji apa pun."
+
+      - name: Jalankan uji — lune
+        if: hashFiles('tests/run.luau') != ''
+        run: lune run tests/run.luau
+
+  # ---------------------------------------------------------------------------
+  # validate-case — validator skema kasus milik EXTA-33 (Nathan — CTO/CIO),
+  # calon lokasi tools/validate-case.luau. Tidak dijalankan selama berkas itu
+  # belum ada. Job ini TIDAK memuat validator tersebut.
+  # ---------------------------------------------------------------------------
+  validate-case:
+    name: validate-case
+    runs-on: ubuntu-latest
+    needs: test
+    if: vars.CI_ENABLED == 'true'
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Cache toolchain
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/luau-tools
+          key: luau-tools-${{ runner.os }}-lune-${{ env.LUNE_TAG }}
+
+      - name: Pasang lune
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luau-tools/bin"
+          cd "$RUNNER_TEMP/luau-tools"
+          curl -sSL -o "lune-${LUNE_TAG#v}-linux-x86_64.zip" \
+            "https://github.com/lune-org/lune/releases/download/${LUNE_TAG}/lune-${LUNE_TAG#v}-linux-x86_64.zip"
+          printf '%s  %s\n' "$LUNE_SHA256" "lune-${LUNE_TAG#v}-linux-x86_64.zip" > checksums.txt
+          sha256sum -c checksums.txt
+          unzip -o -q "lune-${LUNE_TAG#v}-linux-x86_64.zip" -d bin
+          chmod +x bin/lune
+          rm -f ./*.zip checksums.txt
+
+      - name: Tambahkan toolchain ke PATH
+        run: echo "$RUNNER_TEMP/luau-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Lewati validasi kasus — validator belum ada
+        if: hashFiles('tools/validate-case.luau') == ''
+        run: echo "::notice::tools/validate-case.luau belum ada (milik EXTA-33). Job validate-case tidak memvalidasi apa pun."
+
+      - name: Validasi berkas kasus — lune
+        if: hashFiles('tools/validate-case.luau') != ''
+        run: lune run tools/validate-case.luau
