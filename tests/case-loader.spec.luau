@@ -168,5 +168,4 @@ Harness.equal(previous, nil, "validator awal kosong")
 
 local restored = CaseLoader.setValidator(nil)
 Harness.check(restored ~= nil, "setValidator mengembalikan validator sebelumnya")
-
-return nil
+Harness.finish("case-loader")

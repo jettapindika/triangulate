@@ -237,5 +237,4 @@ Harness.check(
 	unknownPiece ~= nil and unknownPiece.accepted == false,
 	"piece_id tak dikenal ditolak"
 )
-
-return nil
+Harness.finish("puzzle-table-service")

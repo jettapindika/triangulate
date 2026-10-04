@@ -562,3 +562,4 @@ Harness.equal(
 	0,
 	"prediksi client memakai clampNormalized + resolveDrop sama persis dengan applyDrop server"
 )
+Harness.finish("puzzle-table")

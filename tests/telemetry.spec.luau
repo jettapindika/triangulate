@@ -137,5 +137,4 @@ Harness.equal(
 )
 Harness.equal(summary.roles.Director.accusations, 1, "ringkasan menghitung tuduhan per role")
 Harness.equal(summary.roles.Handler.inputs, 0, "role tanpa aktivitas tetap muncul")
-
-return nil
+Harness.finish("telemetry")

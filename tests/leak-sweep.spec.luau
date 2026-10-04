@@ -106,6 +106,7 @@ end
 Harness.suite("kebocoran: seluruh view x role")
 
 local pairsChecked = 0
+local findings = 0
 for view, byRole in Net.CLIENT_VIEWS do
 	for role in byRole do
 		local where = string.format("%s/%s", view, role)
@@ -121,7 +122,8 @@ for view, byRole in Net.CLIENT_VIEWS do
 					if #found == 0 then "0 temuan" else table.concat(found, ", ")
 				)
 			)
-			pairsChecked = pairsChecked + 1
+			pairsChecked += 1
+			findings += #found
 		end
 	end
 end
@@ -204,4 +206,17 @@ Harness.check(
 	"kontrol: field rahasia yang disuntik ke payload meja disaring"
 )
 
-return nil
+-- Ringkasan eksplisit, supaya keluaran spec ini bisa dilampirkan sebagai bukti
+-- gate tanpa harus membaca laporan runner: `Harness.check` hanya bersuara saat
+-- gagal, jadi tanpa baris ini keluarannya tidak menunjukkan berapa yang diperiksa.
+print(
+	string.format(
+		"kebocoran: %d pasangan view x role terperiksa, %d temuan rahasia",
+		pairsChecked,
+		findings
+	)
+)
+
+-- Lewat `run.luau` baris ini diam (runner yang melapor). Dijalankan sendiri
+-- sebagai bukti gate, ia yang mencetak ringkasan dan menetapkan kode keluar.
+Harness.finish("leak-sweep")

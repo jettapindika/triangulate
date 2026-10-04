@@ -116,5 +116,4 @@ Harness.equal(AccusationService.rank(100, 1, 0, 900), "S", "cepat, sekali coba, 
 Harness.equal(AccusationService.rank(100, 1, 1, 900), "A", "sekali coba dengan hint -> A")
 Harness.equal(AccusationService.rank(100, 2, 0, 900), "B", "dua percobaan -> B")
 Harness.equal(AccusationService.rank(100, 3, 0, 900), "C", "tiga percobaan -> C")
-
-return nil
+Harness.finish("accusation")

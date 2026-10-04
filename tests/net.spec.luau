@@ -80,5 +80,4 @@ for _, name in Net.REMOTE_NAMES do
 	Harness.check(outbound or inbound, string.format("remote %s punya arah", name))
 	Harness.check(not (outbound and inbound), string.format("remote %s tidak dua arah", name))
 end
-
-return nil
+Harness.finish("net")

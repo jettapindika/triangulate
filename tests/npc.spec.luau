@@ -69,5 +69,4 @@ Harness.check(
 	not NPCController.separateRank(true, false),
 	"toggle host bisa mematikan rank terpisah"
 )
-
-return nil
+Harness.finish("npc")

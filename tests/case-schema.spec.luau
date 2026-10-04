@@ -198,5 +198,4 @@ Harness.check(
 	unlockers["obj_ledger"] ~= nil and unlockers["obj_ledger"][1] == "ded_c_culprit_1",
 	"graph: obj_ledger tercatat dibuka ded_c_culprit_1"
 )
-
-return nil
+Harness.finish("case-schema")
