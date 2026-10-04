@@ -29,6 +29,17 @@ Config.READY_CHECK_SECONDS = 10
 Config.AFK_SECONDS = 60
 Config.REJOIN_HOLD_SECONDS = 180
 
+-- PRD §8: Handler NPC "merakit potongan otomatis dengan kecepatan lambat
+-- setelah kunci diberikan". Angka ini yang membuat "lambat" terukur: tanpa jeda,
+-- satu meja selesai dalam satu detik dan peran Searcher kehilangan artinya.
+--
+-- ASUMSI: 6 detik per potongan. Grid terbesar di MVP adalah 4x4 = 16 potongan
+-- (`shared/PuzzleTable.GRID_FOR_TYPE`), jadi satu meja penuh memakan ~96 detik
+-- bila NPC sendirian -- jelas lebih lambat daripada manusia, tetapi masih
+-- selesai jauh di dalam sesi 15-30 menit (PRD §1). Belum diukur di perangkat;
+-- tuning minggu 7 (PRD §17).
+Config.NPC_ASSEMBLY_SECONDS = 6
+
 -- PRD §5: 3 tuduhan per kasus; setelah habis kasus jadi "Cold Case".
 -- Feedback salah hanya "X dari 3 benar", tanpa menyebut field mana.
 Config.MAX_ACCUSATIONS = 3

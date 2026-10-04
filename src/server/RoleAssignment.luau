@@ -25,6 +25,36 @@ export type Options = {
 	newPlayerExcludedRole: string,
 }
 
+--[[
+	PRD §8: pemain yang memegang role yang sama melewati ambang keadilan
+	diprioritaskan ke preferensi keduanya.
+
+	Diambil sebagai fungsi tersendiri karena dua tempat bergantung padanya:
+	`priorityList` memakainya untuk menyusun urutan, `reasonFor` untuk melaporkan
+	alasan penugasan. Kalau syaratnya ditulis dua kali, keduanya bisa berbeda
+	pendapat tanpa ada yang gagal.
+]]
+local function isUnfair(player: PlayerRef, options: Options): boolean
+	local lastRole: string? = player.recentRoles[#player.recentRoles]
+	if lastRole == nil then
+		return false
+	end
+
+	-- Hitung rentetan role yang sama di akhir riwayat, bukan jumlah kemunculan.
+	-- PRD §8 berbicara tentang pemain yang memegang role sama "3 sesi
+	-- berturut-turut", jadi yang relevan hanya ekor riwayat.
+	local streak = 0
+	for index = #player.recentRoles, 1, -1 do
+		if player.recentRoles[index] == lastRole then
+			streak += 1
+		else
+			break
+		end
+	end
+
+	return streak >= options.fairnessStreak
+end
+
 -- Daftar prioritas efektif seorang pemain: preferensi yang sudah dihormati
 -- aturan keadilan, diikuti role lain sebagai cadangan supaya penugasan selalu
 -- punya solusi.
@@ -40,24 +70,9 @@ local function priorityList(player: PlayerRef, roles: { string }, options: Optio
 		table.insert(ordered, role)
 	end
 
-	-- Hitung rentetan role yang sama di akhir riwayat, bukan jumlah kemunculan.
-	-- PRD §8 berbicara tentang pemain yang memegang role sama "3 sesi
-	-- berturut-turut", jadi yang relevan hanya ekor riwayat.
-	local lastRole: string? = player.recentRoles[#player.recentRoles]
-	local streak = 0
-	if lastRole ~= nil then
-		for index = #player.recentRoles, 1, -1 do
-			if player.recentRoles[index] == lastRole then
-				streak += 1
-			else
-				break
-			end
-		end
-	end
-
 	-- Pemain yang terjebak di role yang sama melewati ambang keadilan: naikkan
 	-- preferensi kedua ke depan, seperti diminta PRD §8.
-	local unfair = lastRole ~= nil and streak >= options.fairnessStreak
+	local unfair = isUnfair(player, options)
 	if unfair and #player.preferences >= 2 then
 		push(player.preferences[2])
 		push(player.preferences[1])
@@ -172,6 +187,46 @@ function RoleAssignment.assign(
 	end
 
 	return assignment
+end
+
+--[[
+	Alasan sebuah role jatuh ke pemain ini, untuk telemetri `role_assigned`
+	(`docs/metrics/skema-event-telemetri.md`, `assignment_reason`).
+
+	Nilainya HARUS berasal dari himpunan yang sudah disepakati skema --
+	`preference_1`, `preference_2`, `fairness`, `fill` -- karena itu yang dibaca
+	Rani saat menilai apakah preferensi benar-benar dihormati (PRD §12). Karena
+	itu fungsi ini tidak memakai `roles`: `assign` yang memutuskan role mana yang
+	ada, di sini hanya pertanyaan "atas dasar apa role ini diberikan".
+
+	Urutannya penting. Pemain yang kena aturan keadilan mendapat preferensi
+	KEDUA, jadi `Handler` pada pemain dengan rentetan panjang akan terbaca
+	`preference_2` kalau keadilan tidak diperiksa lebih dulu -- padahal itu
+	justru kasus yang ingin diukur. Role pertama yang ia tinggalkan dilaporkan
+	`fairness` juga: yang dicatat adalah "aturan keadilan yang aktif", bukan
+	posisi role di daftar.
+
+	Syarat `#preferences >= 2` disalin dari `priorityList`: bila pemain hanya
+	memilih satu preferensi, keadilan tidak mengubah urutan apa pun, sehingga
+	melaporkannya sebagai `fairness` akan salah.
+]]
+function RoleAssignment.reasonFor(
+	player: PlayerRef,
+	_roles: { string },
+	options: Options,
+	role: string
+): string
+	local unfair = isUnfair(player, options) and #player.preferences >= 2
+	if unfair and (role == player.preferences[1] or role == player.preferences[2]) then
+		return "fairness"
+	end
+	if role == player.preferences[1] then
+		return "preference_1"
+	end
+	if role == player.preferences[2] then
+		return "preference_2"
+	end
+	return "fill"
 end
 
 -- Rotasi otomatis untuk private server / seri kasus (PRD §10):

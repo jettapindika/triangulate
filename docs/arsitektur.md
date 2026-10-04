@@ -1,9 +1,10 @@
 # Arsitektur teknis Triangulate
 
 Dokumen ini menjelaskan arsitektur yang **sudah ada di repo ini** (scaffold
-minggu 0, EXTA-32), bukan arsitektur yang dicita-citakan. Setiap klaim membawa
-nomor bagian PRD atau URL sumber primer. Yang tidak bisa saya buktikan ditandai
-`ASUMSI` atau masuk ke bagian "Belum terbukti".
+minggu 0 EXTA-32, kini berjalan sampai minggu 5 PRD §17), bukan arsitektur yang
+dicita-citakan. Setiap klaim membawa nomor bagian PRD atau URL sumber primer.
+Yang tidak bisa saya buktikan ditandai `ASUMSI` atau masuk ke bagian "Batas
+verifikasi yang harus dinyatakan jujur".
 
 Basis: PRD v0.2 (`docs/prd-v0.2.md`), §15 "Persyaratan Teknis" dan §17 "Roadmap".
 
@@ -50,6 +51,7 @@ src/shared/                 Direplikasi ke client. TIDAK BOLEH berisi rahasia.
   Net.luau                  Kontrak remote + proyeksi per role (§15)
   PingPhrases.luau          Frasa ping wheel per role (§7)
   PuzzleTable.luau          Bentuk data meja puzzle (dipakai client dan server)
+  LocationMap.luau          Titik masuk lokasi + anchor objek + bearing (§15)
   case/CaseGraph.luau       Graf ketergantungan: ketersediaan per varian (§4)
   case/CaseLoader.luau      Memuat kasus dari data + seed
   case/CaseValidator.luau   Validator graf kasus (satu jalur, tanpa siklus)
@@ -66,20 +68,31 @@ src/server/                 ServerScriptService. Tidak pernah direplikasi.
   PuzzleTableService.luau   Meja puzzle: pemasangan, progres (§4)
   RoleAssignment.luau       Penetapan role + prioritas keadilan (§8)
   Matchmaking.luau          Lobby, ready check, batas waktu (§8)
+  LobbyFlow.luau            Fase lobby: waiting, ready check, swap, snapshot (§3, §8)
+  SessionPresence.luau      AFK, disconnect, penahanan slot rejoin (§8)
+  FriendSession.luau        Reserved server + TeleportService untuk sesi teman (§8, §15)
   NPCController.luau        Pengambilalihan AFK, aksi NPC (§8)
   TelemetryService.luau     Idle time, waktu ke clue pertama (§12, §15)
 
 src/client/                 StarterPlayerScripts.
   init.client.luau          Titik masuk client
   NetClient.luau            Binding remote; tiap remote punya fungsi bernama
-  Hud/init.luau             HUD: clue board, form tuduhan, rekap Cold Case
+  Hud/init.luau             HUD: layar lobby, clue board, form tuduhan, rekap Cold Case
   Hud/PingWheel.luau        Ping wheel (§7)
   Table/init.luau           Meja puzzle top-down: drag-and-snap, kamera Scriptable (§4, §15)
   Location/init.luau        Interaksi objek Searcher: hold, periksa, Report (§4, §6)
+  Board/init.luau           Papan Director: kartu, pernyataan, peta + pinpoint (§4, §5, §7)
 
 data/cases/                 Di-mount ke ServerStorage.Cases
   gallery_01.json           Kasus contoh "Lukisan yang Tertukar" (§4)
-  README.md                 Aturan data kasus (dibaca Rojo: diabaikan)
+  case_00.json              Case 0: tutorial singkat (§9)
+  kersana_01.json           Kasus kedua: bengkel Kersana
+  README.md                 Aturan penulisan data kasus (dibaca Rojo: diabaikan)
+
+tools/                      Alat CLI
+  validate_case.luau        Validator kasus; exit 1 bila ada yang gagal
+  bukti-rantai-a.luau       Bukti rantai A → bukti end to end + uji kebocoran
+  simulate_lobby.luau       Urutan lobby 3 pemain: NPC, AFK, disconnect, rejoin (§8)
 
 tests/                      Uji CLI via Lune (lihat §8)
 ```
@@ -282,8 +295,8 @@ Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 `Instance` ada di `CaseSource.shapeProblems` dan `CaseSource.load`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 1099 assertion berjalan dalam waktu di bawah satu
-detik (`tests/run.luau`, 20 berkas spec). Untuk game yang aturan menang-kalahnya
+Studio dan tanpa Roblox.** 1332 assertion berjalan dalam waktu di bawah satu
+detik (`tests/run.luau`, 24 berkas spec). Untuk game yang aturan menang-kalahnya
 serumit PRD §5 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank
 S/A/B/C), itu perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio
 tiap kali".
@@ -311,7 +324,7 @@ bisa jalan.
 
 ## 6. RemoteEvent: dibuat kode, bukan Rojo
 
-`init.server.luau` membuat seluruh 22 RemoteEvent dari satu sumber:
+`init.server.luau` membuat seluruh 26 RemoteEvent dari satu sumber:
 `Net.REMOTE_NAMES`. Tidak ada remote di `default.project.json`.
 
 Alasannya: kalau remote didefinisikan dua kali (sekali di file project, sekali
@@ -329,8 +342,8 @@ Pembagiannya:
 
 | Arah | Jumlah | Nama |
 |---|---|---|
-| Server → client | 12 | `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult`, `PuzzleState`, `PiecePlaced`, `PingRelay`, `ContradictionResult`, `TablePreview` |
-| Client → server | 10 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece`, `MarkContradiction`, `Inspect` |
+| Server → client | 13 | `LobbyState`, `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult`, `PuzzleState`, `PiecePlaced`, `PingRelay`, `ContradictionResult`, `TablePreview` |
+| Client → server | 13 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece`, `MarkContradiction`, `Inspect`, `SubmitPreferences`, `SetReady`, `RequestSwap` |
 
 `PingRelay`, `SetTarget`, `ContradictionResult`, dan `TablePreview` adalah
 remote minggu 3 dan minggu 6. Semuanya ada karena `tests/net.spec.luau`
@@ -359,6 +372,19 @@ objek itu boleh diperiksa (`LocationService.isInspectable`), memberi kunci,
 dan mengirim meja yang terbuka lewat `PuzzleState`. Yang menentukan hasil
 pemeriksaan selalu server, bukan client.
 
+Empat remote lobby adalah minggu 5 (PRD §8). `LobbyState`
+(server → client) adalah satu-satunya payload yang menyeberang **sebelum sesi
+ada**: fase, sisa detik, jumlah pemain dan yang siap, preferensi milik pemain
+itu sendiri, dan flag `ready`-nya. Ia sengaja tidak memuat penugasan role:
+PRD §8 menetapkan role SETELAH preferensi terkumpul, jadi mengirimkannya lebih
+awal akan membocorkan hasilnya sebelum pemain memutuskan. `SubmitPreferences`,
+`SetReady`, dan `RequestSwap` (client → server) adalah tiga aksi yang memang
+milik pemain di fase itu. Ketiganya wajib ada di `REMOTE_NAMES`, bukan hanya di
+`CLIENT_TO_SERVER`: `init.server.luau` membuat `RemoteEvent` dari
+`REMOTE_NAMES`, jadi nama yang hanya ada di daftar arah akan menghasilkan
+`remotes.<Nama> == nil` dan gagal saat boot. `tests/net.spec.luau` memeriksa
+kedua arah, bukan hanya satu, justru karena kesalahan itu pernah lolos.
+
 `NetClient` sengaja tidak menyediakan pengiriman payload bebas: tiap remote
 punya fungsi bernama (`NetClient.report`, `NetClient.deduce`, `NetClient.accuse`,
 …), sehingga di code review terlihat persis data apa yang meninggalkan client.
@@ -375,7 +401,7 @@ disengaja.
 
 ---
 
-## 7. Matchmaking dan role: apa yang nyata, apa yang belum
+## 7. Lobby, matchmaking, dan role: apa yang nyata, apa yang belum
 
 Yang **sudah nyata** dan teruji:
 
@@ -392,24 +418,47 @@ Yang **sudah nyata** dan teruji:
   penting: yang pertama "tidak ada manusia", yang kedua "benar-benar diisi NPC".
   Pada MVP Director **tidak** masuk daftar kedua, karena NPC Director adalah P1
   (PRD §8 tabel prioritas NPC, §16).
+- **Lobby (minggu 5, PRD §8).** `LobbyFlow` menjalankan mesin fase
+  `waiting → ready_check → started`, dengan `Matchmaking.deadline` sebagai
+  batas 45 detik dan 90 detik. `submitPreferences` menerima dua preferensi
+  berurutan; `setReady` mencatat kesiapan; `requestSwap` memindahkan role hanya
+  bila **kedua** pemain menyetujui (PRD §8: "Pemain boleh tukar role di lobby
+  (saling setuju)"). `LobbyFlow` sengaja tidak menyentuh `RoleAssignment`:
+  fase dan penetapan role adalah dua keputusan berbeda, dan menyatukannya akan
+  membuat swap tidak bisa diuji tanpa lobby.
+- **NPC Searcher dan Handler (minggu 5, PRD §8).** `NPCController.nextAction`
+  mengubah state sesi menjadi satu aksi: Searcher `move_to_object` ke objek yang
+  ditandai Handler, Handler `assemble_slowly` pada meja pertama yang kuncinya
+  sudah dipegang tim. Handler dibatasi `Config.NPC_ASSEMBLY_SECONDS` per
+  potongan supaya "kecepatan lambat" di PRD §8 terukur, bukan sekadar niat.
+  Director selalu `unsupported` — NPC Director P1 (§16).
+- **AFK takeover, disconnect, dan rejoin (minggu 5, PRD §8).**
+  `SessionPresence` menyimpan jam input terakhir, menandai disconnect, memilih
+  **satu** pengambil alihan per panggilan (disconnect mengalahkan AFK; di antara
+  yang sama, idle terpanjang menang, seri diputus id terkecil), dan membuka slot
+  setelah `Config.REJOIN_HOLD_SECONDS`. `rejoin` mengembalikan role **asli**;
+  slot yang sudah dibuka tidak bisa dipakai lagi. Role yang diambil alih NPC
+  **tidak** dikosongkan saat slotnya dibuka: join-in-progress tidak ada di P0
+  (PRD §16), jadi yang berlaku adalah cabang kedua kalimat PRD §8 — "atau tetap
+  NPC" — dan mengosongkannya akan mematikan role yang sedang berjalan
+  (PRD §6: "tidak ada yang menganggur").
+- **Reserved server sesi teman (minggu 5, PRD §15).** `FriendSession`
+  memvalidasi party terhadap `Config.MAX_PLAYERS` lalu memanggil
+  `reserveServer` + `teleportTo` lewat dependensi yang disuntikkan, sehingga
+  modulnya tetap murni dan bisa diuji dari CLI.
 
-Yang **belum terpasang**, dan alasannya:
+**Tidak ada butir minggu 5 yang tertunda.** Seluruh butir PRD §17 minggu 5
+sudah punya pemanggilnya di `init.server.luau` §7. Yang belum dikerjakan adalah
+minggu 6 (Case 0, story case #1, ping wheel final) — lihat `README.md` bagian
+"Yang belum ada".
 
-PRD §17 menempatkan *"Lobby, preferensi role, NPC, AFK/rejoin"* di **minggu 5**.
-Scaffold minggu 0 memakai jalur sederhana: sesi mulai saat 3 pemain sudah ada.
+### Yang sudah ada tetapi belum tersambung ke UI
 
-| Belum | Modul yang sudah siap | Kenapa ditunda |
-|---|---|---|
-| Timer lobby 45/90 detik | `Matchmaking.deadline`, `secondsLeft` | Butuh penjadwal (`task.delay`); minggu 5 |
-| Ready check 10 detik | `Matchmaking.readyFailures`, `canStart` | Butuh UI yang menyetel `ready`; minggu 5 |
-| Preferensi role dari pemain | `RoleAssignment.assign` | `preferences` masih `Roles.ALL` = "tanpa preferensi"; butuh layar lobby; minggu 5 |
-| Perilaku NPC | `NPCController.nextAction`, `rolesToFill` | Loop game; minggu 5 |
-| AFK takeover & rejoin | `NPCController.shouldTakeOver`, `shouldReleaseSlot` | Butuh deteksi input; minggu 5 |
-
-Yang **sudah dilakukan** meski NPC-nya belum ada: `startSession` mencatat role
-mana yang diisi NPC dan **memperingatkan** role yang kosong tetapi tidak boleh
-diisi NPC pada MVP. Jadi minggu 5 menambah pelaku, bukan mencari tahu role mana
-yang kosong.
+Modul dan handler server-nya jalan, tetapi belum ada layar yang memakainya:
+`FriendSession` tidak punya tombol "main dengan teman" (butuh tempat yang sudah
+dipublikasikan — API teleport tidak bekerja di playtest Studio), dan penanda
+`Pinpoint` masih sampai ke client sebagai chip di peta Director, bukan marker di
+dunia.
 
 ### Satu hal yang tidak bisa dikerjakan dari kode
 
@@ -430,7 +479,11 @@ UI-nya). Ini pekerjaan manusia, bukan pekerjaan kode.
 
 Semua perintah dijalankan dari akar repo.
 
-### Sudah dibuktikan
+### Sudah dibuktikan (snapshot integrasi EXTA-55 + EXTA-56)
+
+> Snapshot historis: angka di tabel ini benar pada commit integrasi itu, bukan
+> angka terkini. Angka terkini ada di bagian "Sudah dibuktikan pada hasil
+> EXTA-58" di bawah.
 
 Semua perintah di bawah dijalankan pada hasil integrasi EXTA-55 + EXTA-56 ke
 `main` (`830fe1a` + `b3fa556`), 2026-10-05, dengan perintah yang **sama persis**
@@ -475,6 +528,50 @@ Total 30 `ModuleScript`, 1 `Script`, 1 `LocalScript`, 3 `Folder`. Tidak ada
 `rbxassetid` nyata di pohon ini: `Table.SHEET` masih `rbxassetid://0`, jadi
 place ini tidak akan menampilkan gambar puzzle sampai sheet-nya diunggah.
 
+### Sudah dibuktikan pada hasil EXTA-58 (minggu 5)
+
+Dijalankan 2026-10-05 dari akar repo. Perintahnya sama isinya dengan
+`.github/workflows/ci.yml`; dua bedanya karena CI belum aktif: `selene`/`stylua`
+di sini diberi cakupan eksplisit `src tests tools` (bukan `.`), dan
+`validate_case` dijalankan atas satu berkas contoh, bukan glob `data/cases/*.json`
+(validasi seluruh kasus ada di `tests/run.luau`).
+
+| Perintah | Hasil |
+|---|---|
+| `lune run tests/run.luau` | **1332 assertion, 0 gagal** — 24 berkas spec |
+| `selene src tests tools` | **0 errors, 0 warnings, 0 parse errors** |
+| `stylua --check src tests tools` | **bersih** (exit 0) |
+| `luau-analyze --mode=strict` atas 21 modul murni | **0 diagnostik** |
+| `rojo build -o build.rbxlx` | **berhasil** — 455.223 byte |
+| `lune run tools/validate_case.luau -- data/cases/gallery_01.json` | **LULUS** — 1 berkas, 0 errors, 0 warnings |
+| `lune run tools/validate_case.luau -- data/cases/*.json` | **LULUS** — 3 berkas, 0 errors, 0 warnings |
+| `lune run tools/simulate_lobby.luau` | **LULUS** — 52 invarian, 0 gagal |
+| `lune run tools/bukti-rantai-a.luau` | **LULUS** — 0 pemeriksaan gagal |
+
+Pohon hasil build bertambah tiga `ModuleScript` di bawah
+`ServerScriptService.Server` (kini **14 anak**): `LobbyFlow`, `SessionPresence`,
+`FriendSession`. Total pohon menjadi **33 `ModuleScript`**, 1 `Script`,
+1 `LocalScript`, 3 `Folder`. Bagian yang berubah:
+
+```
+ServerScriptService.Server         Script (14 ModuleScript anak)
+  AccusationGate, AccusationService, CaseSource, ClueGraph, DeductionEngine,
+  FriendSession, LobbyFlow, LocationService, Matchmaking, NPCController,
+  PuzzleTableService, RoleAssignment, SessionPresence, TelemetryService
+```
+
+`Table.SHEET` masih `rbxassetid://0`; place ini tetap tidak menampilkan gambar
+puzzle sampai sheet-nya diunggah.
+
+`tools/simulate_lobby.luau` adalah urutan lobby yang bisa dijalankan: tiga
+pemain masuk, memilih dua preferensi, ready, sesi mulai, satu pemain AFK 60 detik
+→ NPC mengambil alih, satu disconnect → slot ditahan, lalu rejoin. Ia mencetak
+satu baris per peristiwa dan memeriksa invariannya; ia berhenti pada pelanggaran
+pertama dengan menyebut nama invariannya. Sudah diuji-rusak: dengan
+`SessionPresence.takeovers` dipaksa mengembalikan daftar kosong, alat itu
+berhenti di `INVARIAN GAGAL: tepat 60 detik tanpa input: NPC harus mengambil
+alih`, bukan tetap melaporkan lulus.
+
 ### Batas verifikasi yang harus dinyatakan jujur
 
 **`luau-analyze` yang berdiri sendiri tidak punya definisi API Roblox.** Ia
@@ -484,20 +581,33 @@ tetapi **bukan** `--definitions`. Jadi modul yang menyentuh `Instance`,
 dan `Unknown global`, bukan karena kodenya salah, tetapi karena tipe itu tidak
 ada di binary-nya.
 
-Karena itu batasnya saya nyatakan eksplisit: **19 modul murni bersih di bawah
+Karena itu batasnya saya nyatakan eksplisit: **21 modul murni bersih di bawah
 `--mode=strict`; sisanya (`init.server.luau`, `init.client.luau`, `NetClient`,
-`Hud/*`, `Table/*`, `Board/*`, `Location/*`, `CaseSource`) tidak bisa diperiksa
-tipe oleh binary ini.** `shared/case/Compat.luau` juga
+`Hud/*`, `Table/*`, `Board/*`, `Location/*`, `CaseSource`, `LobbyFlow`) tidak
+bisa diperiksa tipe oleh binary ini.** `shared/case/Compat.luau` juga
 tidak dihitung: ia ditandai `--!nocheck`, jadi "lulus" di sana bukan hasil
-pemeriksaan. Untuk modul yang menyentuh API Roblox dibutuhkan `luau-lsp` dengan
-`sourcemap.json` dari `rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD),
-bukan scaffold ini.
+pemeriksaan. `LobbyFlow` di luar daftar karena `require`-nya dinamis
+(`script.Matchmaking` di Roblox, `./Matchmaking` di CLI) — luau-analyze
+melaporkannya sebagai `Unknown require: unsupported path`, dan menandai berkasnya
+`--!nocheck` hanya akan menyembunyikan sisa berkasnya. Untuk modul yang
+menyentuh API Roblox dibutuhkan `luau-lsp` dengan `sourcemap.json` dari
+`rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD), bukan scaffold ini.
 
 **`rojo build` membuktikan struktur, bukan perilaku.** Tidak ada Roblox runtime
-di lingkungan ini, jadi tidak ada satu pun baris `init.server.luau` yang pernah
-dieksekusi. Yang bisa saya klaim: berkasnya parse bersih, tipenya konsisten di
-bagian murni, dan strukturnya benar setelah dibangun. Yang tidak bisa saya
-klaim: bahwa sesi 3 pemain berjalan.
+di lingkungan ini. Yang bisa saya klaim: berkasnya parse bersih, tipenya
+konsisten di bagian murni, dan strukturnya benar setelah dibangun.
+
+Sejak EXTA-58, `init.server.luau` **pernah** dieksekusi — tetapi di bawah stub
+API Roblox yang ditulis untuk sekali pakai, bukan oleh engine. Harness itu
+menyediakan `Instance`, `Players`, `RemoteEvent`, `task`, dan `os` palsu, lalu
+menjalankan berkasnya dari CLI sambil mencatat tiap `FireClient`. Yang
+dibuktikan: urutan kontrol §7 benar, dan payload yang keluar berisi apa yang
+seharusnya (mis. `npc_takeover` tepat tiga kali, satu per pemain, dengan
+`trigger=afk_60s`). Yang **tidak** dibuktikan: replikasi sungguhan, kamera,
+`WaitForChild`, hit-testing sentuh, dan perilaku engine lain yang di stub hanya
+jadi fungsi kosong. Harness itu dihapus setelah dipakai, jadi angkanya tidak bisa
+direproduksi dari repo — yang bisa direproduksi adalah
+`tools/simulate_lobby.luau` dan 1332 assertion di `tests/run.luau`.
 
 ### Yang tidak dijalankan sama sekali
 
@@ -520,12 +630,18 @@ Jadi uji reserved server (PRD §15) butuh place yang sudah dipublikasikan.
 |---|---|---|---|
 | 1 | Tidak ada rate limiting remote | Client bisa spam `Report`/`SubmitDeduction`/`MarkContradiction`; throttle platform ~500 req/s dibagi lintas remote bertipe sama | Sebelum rilis |
 | 2 | `Players.MaxPlayers` hanya diverifikasi, tidak dipaksa | Place dengan MaxPlayers ≠ 3 bisa jalan | Sebelum playtest |
-| 3 | Lobby minggu 5 belum ada (§7) | Sesi hanya mulai dengan 3 manusia; NPC tidak jalan | Minggu 5 |
+| 3 | `FriendSession` belum punya tombol di UI | Pemain tidak bisa mengundang teman (PRD §8, §15); API teleport juga tidak jalan di playtest Studio | Sebelum rilis |
 | 4 | `luau-lsp` + `sourcemap.json` belum di CI | Regresi tipe di modul Roblox-facing tidak tertangkap otomatis | EXTA-34 |
 | 5 | Telemetri dihitung tapi tidak dikirim | PRD §12 tidak bisa diukur | EXTA-34 |
 | 6 | Belum ada `RemoteFunction` untuk permintaan balasan | Belum dibutuhkan; hindari `InvokeClient` (server bisa yield selamanya) | Kalau perlu |
-| 7 | Remote `TargetMarker` belum pernah ditembakkan | Handler tidak bisa menandai target untuk Searcher (PRD §7) — butuh UI Handler | Minggu 4 |
-| 8 | Pinpoint baru sampai ke client sebagai chip di peta Director, bukan marker di dunia | Searcher tidak melihat marka di lokasi (PRD §7) — data kasus belum punya koordinat dunia | Minggu 4 |
+| 7 | Pinpoint baru sampai ke client sebagai chip di peta Director, bukan marker di dunia | Searcher menerima payload `pinpoint` tetapi belum menggambar apa pun (PRD §7) — data kasus belum punya koordinat dunia | Minggu 6 |
+| 8 | Tidak ada rekaman runtime Roblox | Semua bukti lobby berasal dari modul murni, log `tools/simulate_lobby.luau`, dan stub sekali pakai; replikasi dan UI sentuh belum pernah dijalankan engine | Minggu 7 (playtest) |
+| 9 | `Config.REJOIN_HOLD_SECONDS = 180` vs `rejoin_window_ms = 300000` di `docs/metrics/skema-event-telemetri.md` | Server menahan slot 3 menit (PRD §8: "slot ditahan 3 menit") sementara skema telemetri Rani menyebut 5 menit; analitik dan perilaku permainan tidak akan cocok | Sebelum rilis — perlu keputusan pemilik skema |
+
+Untuk nomor 9: kode mengirim nilai `Config` (180000 ms) dan divergensinya
+dicatat di komentar `init.server.luau`, bukan "diperbaiki" diam-diam di salah
+satu sisi. Yang benar menurut PRD §8 adalah 3 menit; yang perlu diputuskan
+apakah skemanya yang salah tulis atau memang disengaja.
 
 Untuk nomor 6, peringatannya verbatim dari dokumentasi: `InvokeClient` — *"If
 the client doesn't return a value, the server yields forever."*
@@ -538,7 +654,9 @@ memakai RemoteEvent satu arah untuk semuanya.
 
 Dokumen dan bagian PRD:
 
-- `docs/prd-v0.2.md` §1, §3, §4, §5, §7, §8, §9, §10, §12, §15, §16, §17, §18
+- `docs/prd-v0.2.md` §1, §3, §4, §5, §6, §7, §8, §9, §10, §12, §15, §16, §17, §18
+- `docs/metrics/skema-event-telemetri.md` §3.1 (nama event lobby dan nilainya)
+- `docs/rilis.md` (snapshot audit EXTA-61, commit `80b35e9`)
 
 Dokumentasi Roblox (semua diakses 2026-10-04):
 

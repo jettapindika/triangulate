@@ -82,6 +82,13 @@ local state: Hud.State = {
 	cleanupSecondsLeft = nil,
 	coldCaseRecap = nil,
 	accusationOptions = nil,
+	lobbyPhase = nil,
+	lobbySecondsLeft = nil,
+	lobbyPlayerCount = nil,
+	lobbyReadyCount = nil,
+	lobbyMaxPlayers = nil,
+	lobbyPreferences = nil,
+	lobbyReady = nil,
 }
 
 -- Papan dipasang untuk Director saja. Payload yang memicunya BUKAN semua milik
@@ -162,7 +169,42 @@ local hud = Hud.mount(player, state, {
 		-- memakan jatah percobaan tim.
 		NetClient.accuse(bound, accusation)
 	end,
+	onSubmitPreferences = function(preferences: { string })
+		-- PRD §3: dua preferensi role, urut prioritas. Yang dikirim adalah
+		-- urutan pilihan, bukan role yang diklaim; penugasan tetap milik server
+		-- (`RoleAssignment`).
+		NetClient.submitPreferences(bound, preferences)
+	end,
+	onSetReady = function(ready: boolean)
+		-- PRD §8: ready check. Pemain yang tidak siap diganti NPC, dan yang
+		-- memutuskan itu `LobbyFlow.tick` -- bukan client.
+		NetClient.setReady(bound, ready)
+	end,
+	onRequestSwap = function(targetUserId: number)
+		-- PRD §8: tukar role hanya terjadi bila kedua pihak saling meminta,
+		-- jadi ini permintaan, bukan penukaran.
+		NetClient.requestSwap(bound, targetUserId)
+	end,
 })
+
+-- PRD §3, §8: fase lobby. Ini payload pertama yang datang, dan satu-satunya
+-- yang berarti sampai sesi dimulai. Server mengirim snapshot baru setiap kali
+-- lobby berubah, jadi panel tidak perlu menghitung apa pun sendiri.
+bound.LobbyState.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	-- "started" berarti lobby selesai dan HUD sesi yang berlaku. Snapshot
+	-- pertama fase itu memang masih terkirim, jadi panelnya disembunyikan di
+	-- sini -- bukan menunggu `session_state`.
+	if payload.phase == "started" then
+		hud.hideLobby()
+		return
+	end
+
+	hud.updateLobby(payload)
+end)
 
 -- Briefing per role (PRD §9), status sesi (PRD §5, §6), dan kandidat form
 -- tuduhan (PRD §5). Ketiganya datang lewat remote yang sama, diproyeksikan

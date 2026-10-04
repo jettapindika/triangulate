@@ -42,6 +42,8 @@ local Matchmaking = require(script.Matchmaking)
 local NPCController = require(script.NPCController)
 local TelemetryService = require(script.TelemetryService)
 local PuzzleTableService = require(script.PuzzleTableService)
+local LobbyFlow = require(script.LobbyFlow)
+local SessionPresence = require(script.SessionPresence)
 
 -- `kamus-metrik.md` §0.2 mewajibkan `t_server_ms` untuk seluruh perhitungan
 -- metrik, sedangkan `os.clock()` -- sumber waktu yang sudah dipakai berkas ini
@@ -53,10 +55,11 @@ local function telemetryMs(): number
 	return os.clock() * 1000
 end
 
--- `NPCController` dipakai di `startSession` untuk menghitung role mana yang
--- diisi NPC (PRD §8). Yang BELUM ada adalah loop yang menjalankan aksinya --
--- `nextAction`, takeover AFK, dan rejoin adalah deliverable minggu 5 (PRD §17),
--- dan kontraknya sudah diuji di `tests/npc.spec.luau`.
+-- `NPCController` dipakai di dua tempat: `startSession` menghitung role mana
+-- yang diisi NPC (PRD §8), dan loop NPC di bagian 7 menjalankan aksinya
+-- (`nextAction`, pengambilalihan AFK, pelepasan slot). Kontrak murninya diuji di
+-- `tests/npc.spec.luau`; glue-nya di sini tidak bisa diuji dari CLI karena
+-- menyentuh `Player` dan `Workspace`.
 
 -- ---------------------------------------------------------------------------
 -- 1. Guard arsitektur
@@ -144,11 +147,31 @@ type Session = {
 	roles: { [number]: string },
 	-- PRD §8: "Jika belum 3 manusia, role kosong diisi NPC." `roles` di atas
 	-- di-key oleh `UserId`, dan NPC tidak punya UserId -- jadi role yang tidak
-	-- dipegang manusia dicatat terpisah di sini. Perilaku NPC-nya sendiri baru
-	-- ada di minggu 5 (PRD §17); yang sudah nyata sekarang adalah catatannya,
-	-- sehingga minggu 5 menambah pelaku, bukan mencari tahu role mana yang
-	-- kosong.
+	-- dipegang manusia dicatat terpisah di sini. Ini daftar role yang kosong
+	-- SEJAK AWAL dan tidak berubah sepanjang sesi; role yang dijalankan NPC
+	-- sekarang ada di `npcDriven`.
 	npcRoles: { [string]: boolean },
+	-- PRD §8: NPC Searcher "berjalan ke objek yang ditandai ping/pinpoint dan
+	-- melapor". Yang menandai objek adalah Target Marker milik Handler
+	-- (PRD §7), jadi id terakhir dari `handleSetTarget` disimpan di sini dan
+	-- dibaca loop NPC. Sesi, bukan pemain: penanda adalah perintah tim, dan
+	-- Handler yang keluar tidak boleh membatalkan perintahnya.
+	targetObjectId: string?,
+	-- Objek yang sudah DILAPORKAN oleh NPC Searcher. Tanpa ini laporan yang
+	-- sama terkirim ulang setiap tick, dan clue board Director kebanjiran Clue
+	-- Card kembar. Direset saat `handleSetTarget` memindahkan penanda: penanda
+	-- baru adalah perintah baru.
+	npcReportedObjectId: string?,
+	-- Role yang SEDANG tidak dipegang manusia aktif (PRD §8). Isinya role tanpa
+	-- manusia sejak awal (`npcRoles`) DITAMBAH role yang diambil alih NPC karena
+	-- pemainnya AFK 60 detik atau disconnect. Loop NPC mengiterasi tabel ini,
+	-- bukan `npcRoles`: tanpa itu `npc_takeover` hanya tercatat di log sementara
+	-- tidak ada yang benar-benar menjalankan role-nya.
+	npcDriven: { [string]: boolean },
+	-- Cap waktu (detik `os.clock`) aksi rakit terakhir NPC Handler. PRD §8:
+	-- Handler NPC "merakit potongan otomatis dengan kecepatan lambat setelah
+	-- kunci diberikan" -- tanpa jeda ini satu meja selesai dalam sekejap.
+	npcAssembledAt: number,
 	engine: DeductionEngine.Engine,
 	completedDeductions: { [string]: boolean },
 	-- Id Clue Card yang SUDAH dimiliki Director. Ini yang membuat penandaan
@@ -183,12 +206,85 @@ type Session = {
 local session: Session? = nil
 local lobby = Matchmaking.newLobby(os.clock())
 
+-- PRD §8: kehadiran pemain -- AFK dan rejoin. Satu tabel untuk seluruh server,
+-- bukan per sesi: pemain bisa AFK di lobby sebelum sesi ada, dan `rejoin`
+-- menuntut jawaban "masih dalam masa tahan?" yang tidak bergantung pada apakah
+-- sesi sudah dimulai.
+local presence = SessionPresence.new(os.clock())
+
+-- PRD §8: "Prioritas keadilan: pemain yang memegang role yang sama 3 sesi
+-- berturut-turut mendapat prioritas ke preferensi keduanya." Riwayat dan
+-- hitungan sesi hidup di MEMORI server: MVP tidak punya DataStore (PRD §16
+-- tidak menaruh persistensi di P0), jadi keduanya hilang saat server tutup dan
+-- keadilan baru berlaku di dalam satu server. Itu dinyatakan di sini supaya
+-- tidak ada yang mengira aturannya sudah lintas server.
+local recentRolesByPlayer: { [number]: { string } } = {}
+local sessionsPlayedByPlayer: { [number]: number } = {}
+
+--[[
+	Mencatat satu peristiwa lobby ke console dengan nama dan properti dari
+	`docs/metrics/skema-event-telemetri.md` (`lobby_enter`, `lobby_exit`,
+	`role_assigned`, `player_left`, `player_rejoined`, `npc_takeover`).
+
+	Sengaja TIDAK lewat `TelemetryService.record`: modul itu menghitung jendela
+	idle dari input gameplay dan `EventKind`-nya hanya memuat jenis peristiwa
+	permainan. Menambahkan jenis lobby ke sana akan mencampur dua tabel waktu
+	yang berbeda. Pengiriman terstruktur peristiwa ini adalah pekerjaan exporter
+	EXTA-36; yang ada di sini adalah satu baris per peristiwa, di satu tempat,
+	sehingga exporter tinggal memanggil dari sini.
+]]
+local function announceLobby(eventName: string, fields: { [string]: any }): ()
+	local parts: { string } = {}
+	for key, value in fields do
+		table.insert(parts, string.format("%s=%s", key, tostring(value)))
+	end
+	table.sort(parts)
+	print(string.format("[Triangulate] %s %s", eventName, table.concat(parts, " ")))
+end
+
+-- PRD §8: "Timer lobby 45 detik. Jika belum 3 manusia, role kosong diisi NPC.
+-- Pemain bisa memilih tunggu sampai 90 detik." Seluruh angkanya dari
+-- `shared/Config.luau`; tidak ada salinan kedua di berkas ini.
+local function lobbyConfig(): Matchmaking.Config
+	return {
+		maxPlayers = Config.MAX_PLAYERS,
+		lobbySeconds = Config.LOBBY_SECONDS,
+		extendedSeconds = Config.LOBBY_EXTENDED_SECONDS,
+		readyCheckSeconds = Config.READY_CHECK_SECONDS,
+	}
+end
+
+-- Mesin fase lobby (PRD §8, §17 minggu 5): menunggu -> ready check -> mulai.
+-- Daftar role dan jumlah preferensi masuk sebagai kebijakan, supaya `Roles`
+-- tetap satu-satunya sumbernya.
+local flow = LobbyFlow.new(lobby, lobbyConfig(), {
+	roles = Roles.ALL,
+	preferenceCount = Roles.PREFERENCE_COUNT,
+})
+
+-- Role yang ditetapkan SEBELUM sesi ada. `LobbyFlow.requestSwap` dan
+-- `Matchmaking.swap` bekerja pada peta `{ userId: role }`, dan peta itu baru ada
+-- sebagai `session.roles` setelah sesi dimulai -- tanpa tabel ini, tukar role di
+-- lobby tidak punya tempat untuk menulis. Isinya dipindahkan ke `session.roles`
+-- saat sesi mulai dan tidak dibaca lagi setelahnya.
+local preSessionRoles: { [number]: string } = {}
+
 local function roleOf(userId: number): string?
 	local current = session
 	if current == nil then
 		return nil
 	end
 	return current.roles[userId]
+end
+
+--[[
+	PRD §8: "AFK 60 detik tanpa input -> NPC mengambil alih role itu". Yang
+	dihitung adalah INPUT BERMAKNA, jadi setiap handler yang menerima aksi
+	pemain menandai kehadirannya di sini. Satu fungsi, bukan sembilan panggilan
+	`SessionPresence.touch` yang bisa berbeda jamnya.
+]]
+local function touchPresence(userId: number): ()
+	SessionPresence.touch(presence, userId, os.clock())
 end
 
 -- Mengirim payload ke satu role, sudah diproyeksikan sesuai view-nya.
@@ -246,6 +342,45 @@ local function fireToRoleExcept(
 					remote:FireClient(player, projected)
 				end
 			end
+		end
+	end
+end
+
+--[[
+	Menyiarkan `lobby_state` ke semua pemain yang sedang terhubung.
+
+	`fireToRole` TIDAK bisa dipakai di sini: ia mengiterasi `session.roles` dan
+	kembali lebih awal saat `session == nil`, padahal justru pada fase lobby
+	sesinya belum ada. Jadi loop-nya langsung atas `Players:GetPlayers()`.
+
+	View `lobby_state` didefinisikan untuk ketiga role dengan proyeksi yang
+	identik (`src/shared/Net.luau`), jadi role apa pun boleh dipakai selama ia
+	salah satu dari `Roles.ALL`. Role asli pemain dipakai bila sesi sudah ada,
+	supaya pilihan role di payload tidak berubah sendiri saat sesi mulai.
+
+	Yang TIDAK ikut ke client: penugasan role. PRD §8 menetapkan role SETELAH
+	preferensi terkumpul, dan mengirimkannya lebih awal akan membocorkan
+	hasilnya sebelum pemain memutuskan.
+]]
+local function pushLobbyState(): ()
+	local remote = remotes.LobbyState
+	if remote == nil then
+		warn("[Triangulate] remote 'LobbyState' tidak terdaftar")
+		return
+	end
+
+	local now = os.clock()
+	local current = session
+	for _, player in Players:GetPlayers() do
+		local role: string = Roles.SEARCHER
+		if current ~= nil and current.roles[player.UserId] ~= nil then
+			role = current.roles[player.UserId]
+		end
+
+		local projected =
+			Net.forRole("lobby_state", role, LobbyFlow.snapshot(flow, now, player.UserId))
+		if projected ~= nil then
+			remote:FireClient(player, projected)
 		end
 	end
 end
@@ -525,6 +660,56 @@ local function gateState(current: Session): { [string]: any }
 end
 
 --[[
+	Mengirim Role Card ke SATU pemain (PRD §9: "Kamu tahu apa / Tidak tahu apa /
+	Tugas pertamamu"). Tiap role menerima proyeksi berbeda, dan tidak ada role
+	yang menerima field solusi.
+
+	PRD §4: "Tiap kasus punya 2-3 pernyataan saksi/tersangka, minimal satu
+	berbohong." Saksi pembohong itu milik SATU varian (lihat `variants` di
+	`$defs.statement`), jadi pernyataan yang dikirim ke Director tidak boleh
+	diambil dari `briefings.Director.statements` apa adanya -- daftar statis itu
+	hanya memuat pernyataan yang berlaku di semua cabang. Daftar per varian
+	dihitung `SharedCaseLoader.projectForRole`, modul yang sama yang dipakai
+	untuk menyaring node; menyaring ulang di sini akan jadi salinan kedua dari
+	aturan `CaseGraph.statementAppliesTo`.
+
+	Fungsi, bukan blok di dalam `startSession`, karena rejoin (PRD §8) memakai
+	jalur yang sama: pemain yang kembali setelah disconnect harus menerima
+	kartunya lagi.
+]]
+local function sendBriefing(current: Session, player: Player, role: string): ()
+	local briefings = (current.case :: any).briefings
+	if type(briefings) ~= "table" then
+		return
+	end
+
+	local briefing = briefings[role]
+	if type(briefing) ~= "table" then
+		return
+	end
+
+	-- Disalin, bukan dimutasi: `briefing` masih menunjuk ke tabel di dalam data
+	-- kasus, dan menulis ke sana akan mengubah kasus yang di-cache untuk sesi
+	-- berikutnya.
+	local payload: { [string]: any } = table.clone(briefing)
+	local variantId = current.variantId
+	if role == Roles.DIRECTOR and variantId ~= nil then
+		local projectedDirector =
+			SharedCaseLoader.projectForRole(current.case, variantId, "Director")
+		if type(projectedDirector) == "table" and type(projectedDirector.statements) == "table" then
+			if #projectedDirector.statements > 0 then
+				payload.statements = projectedDirector.statements
+			end
+		end
+	end
+
+	local projected = Net.forRole("briefing", role, payload)
+	if projected ~= nil then
+		remotes.SessionState:FireClient(player, projected)
+	end
+end
+
+--[[
 	Progres tiap meja untuk Table Preview (PRD §7).
 
 	Bentuknya sengaja datar dan hanya angka: `node_id`, `placed`, `total`,
@@ -609,27 +794,46 @@ local function startSession(): ()
 	-- untuk scatter akan menggeser varian sesi.
 	local rng = Random.new(os.time())
 
-	local players = Players:GetPlayers()
+	-- PRD §8: role ditetapkan dari preferensi yang benar-benar dikirim pemain,
+	-- bukan dari `Roles.ALL` sebagai "tanpa preferensi". Sumbernya `lobby.players`,
+	-- bukan `Players:GetPlayers()`: pemain yang GUGUR ready check sudah keluar
+	-- dari lobby (`LobbyFlow.tick`), dan menetapkannya role akan memberi kursi
+	-- kepada orang yang tidak ikut bermain.
 	local refs: { RoleAssignment.PlayerRef } = {}
-	for _, player in players do
-		local prefs = Roles.ALL
+	for _, entry in lobby.players do
+		if Players:GetPlayerByUserId(entry.id) == nil then
+			continue
+		end
 		table.insert(refs, {
-			id = player.UserId,
-			preferences = prefs,
-			recentRoles = {},
-			isNew = true,
+			id = entry.id,
+			preferences = entry.preferences,
+			-- PRD §8: prioritas keadilan membaca riwayat role pemain ini.
+			recentRoles = recentRolesByPlayer[entry.id] or {},
+			-- PRD §8: "Pemain baru tidak otomatis jadi Director di sesi pertama."
+			isNew = (sessionsPlayedByPlayer[entry.id] or 0) == 0,
 		})
 	end
 
-	local assigned = RoleAssignment.assign(refs, Roles.ALL, {
+	local assignmentOptions: RoleAssignment.Options = {
 		fairnessStreak = Roles.FAIRNESS_STREAK,
 		newPlayerExcludedRole = Roles.NEW_PLAYER_EXCLUDED_ROLE,
-	})
+	}
 
-	-- PRD §8: role yang tidak dipegang manusia diisi NPC. Untuk sekarang ini
-	-- hanya dicatat dan dilog; `NPCController` (sudah ada dan sudah diuji di
-	-- `tests/npc.spec.luau`) belum punya loop yang menjalankannya -- itu
-	-- deliverable minggu 5 (PRD §17).
+	local assigned = RoleAssignment.assign(refs, Roles.ALL, assignmentOptions)
+
+	-- PRD §8: "Pemain boleh tukar role di lobby (saling setuju)". Hasil tukar
+	-- itu ditulis `handleRequestSwap` ke `preSessionRoles` selagi sesi belum ada,
+	-- dan dipindahkan ke sini supaya penugasan awal tidak menimpanya. Tabelnya
+	-- dikosongkan setelah dipindahkan: sesi berikutnya menghitung ulang dari
+	-- preferensi, bukan mewarisi tukar role sesi lama.
+	for userId, role in preSessionRoles do
+		assigned[userId] = role
+	end
+	table.clear(preSessionRoles)
+
+	-- PRD §8: role yang tidak dipegang manusia diisi NPC. Yang menjalankan
+	-- role-nya adalah loop NPC di bagian 7 (`NPCController.nextAction`), lewat
+	-- `session.npcDriven` yang diisi dari `npcRoles` di bawah.
 	--
 	-- Dipakai `NPCController.rolesToFill`, bukan `Matchmaking.rolesWithoutHumans`,
 	-- karena keduanya menjawab pertanyaan berbeda: `rolesWithoutHumans` = role
@@ -645,6 +849,16 @@ local function startSession(): ()
 	local npcRoles: { [string]: boolean } = {}
 	for _, role in NPCController.rolesToFill(humanRoles, Roles.ALL, Roles.NPC_FILLABLE) do
 		npcRoles[role] = true
+	end
+
+	-- Role yang SEDANG dijalankan NPC. Berawal dari role tanpa manusia, lalu
+	-- ditambah pengambilalihan AFK/disconnect di loop bagian 7. Salinan, bukan
+	-- `npcRoles` yang sama: `npcRoles` menjawab "siapa yang kosong sejak awal"
+	-- dan tetap begitu sepanjang sesi, sedangkan tabel ini berubah saat pemain
+	-- AFK dan pulih saat ia kembali.
+	local npcDriven: { [string]: boolean } = {}
+	for role in npcRoles do
+		npcDriven[role] = true
 	end
 
 	local unstaffed: { string } = {}
@@ -672,6 +886,43 @@ local function startSession(): ()
 				table.concat(unstaffed, ", ")
 			)
 		)
+	end
+
+	-- PRD §8 dan skema `role_assigned` (`docs/metrics/skema-event-telemetri.md`
+	-- §3.1): satu baris per pemain berisi role final, alasan penugasannya, dan
+	-- berapa lama ia menunggu. `reasonFor` dijalankan atas `Roles.ALL` karena
+	-- seluruh role memang kandidat pada penugasan ini.
+	for _, ref in refs do
+		local role = assigned[ref.id]
+		if role == nil then
+			continue
+		end
+
+		local entry = Matchmaking.find(lobby, ref.id)
+		local waitedMs: number? = nil
+		if entry ~= nil then
+			waitedMs = math.floor((os.clock() - entry.joinedAt) * 1000)
+		end
+
+		announceLobby("role_assigned", {
+			role = role,
+			assignment_reason = RoleAssignment.reasonFor(ref, Roles.ALL, assignmentOptions, role),
+			preference_1 = ref.preferences[1],
+			preference_2 = ref.preferences[2],
+			lobby_wait_ms = waitedMs,
+		})
+
+		-- PRD §8: riwayat inilah yang membuat prioritas keadilan berlaku pada
+		-- sesi BERIKUTNYA. Hanya di memori server: MVP tidak punya DataStore
+		-- (PRD §16), jadi keadilan baru berlaku di dalam satu server dan
+		-- hilang saat server tutup.
+		local history = recentRolesByPlayer[ref.id] or {}
+		table.insert(history, role)
+		while #history > Roles.FAIRNESS_STREAK do
+			table.remove(history, 1)
+		end
+		recentRolesByPlayer[ref.id] = history
+		sessionsPlayedByPlayer[ref.id] = (sessionsPlayedByPlayer[ref.id] or 0) + 1
 	end
 
 	local recipes: { DeductionEngine.Recipe } = {}
@@ -834,18 +1085,26 @@ local function startSession(): ()
 				return CaseGraph.statementAppliesTo(statement, variantId or "")
 			end
 		),
-		-- PRD §8 menempatkan lobby dan ready check SEBELUM kasus mulai (minggu 5),
+		-- PRD §8: lobby dan ready check berjalan SEBELUM kasus mulai (minggu 5),
 		-- dan `kamus-metrik.md` §1.3 memakai `case_started.t_server_ms` sebagai
-		-- titik nol jendela idle. Di scaffold ini keduanya berimpit -- sesi
-		-- dibuat tepat saat kasus mulai -- jadi satu cap waktu dipakai untuk
-		-- keduanya, dan minggu 5 tinggal memanggil
-		-- `TelemetryService.markCaseStarted` saat kasus benar-benar mulai.
+		-- titik nol jendela idle. Karena itu `caseStartedAt` diisi lewat
+		-- `markCaseStarted` tepat setelah sesi ini berdiri -- bukan di sini --
+		-- supaya pemisahan "sesi dibuat" dan "kasus mulai" tetap terlihat di
+		-- kode walau keduanya jatuh pada tick yang sama.
 		--
 		-- `variantId` ikut masuk (SOP-02 langkah 12): tanpa itu "varian mana
 		-- yang lebih sering buntu" tidak bisa dihitung dari rekaman sesi.
-		telemetry = TelemetryService.newSession(telemetryStartedAt, telemetryStartedAt, variantId),
+		telemetry = TelemetryService.newSession(telemetryStartedAt, nil, variantId),
 		startedAt = startedAt,
+		npcDriven = npcDriven,
+		npcAssembledAt = startedAt,
+		npcReportedObjectId = nil,
 	}
+
+	-- `case_started` adalah titik nol semua durasi (kamus-metrik.md §0.2), dan
+	-- sejak minggu 5 ia jatuh di sini -- sesudah lobby dan ready check, bukan
+	-- saat modul dimuat.
+	TelemetryService.markCaseStarted(session.telemetry, telemetryStartedAt)
 
 	-- Meja puzzle sesi ini (PRD §4, §15). Node bukti yang hidup pada varian
 	-- yang dipilih menjadi meja; tipe puzzle yang belum dikenal DILEWATI, bukan
@@ -873,48 +1132,12 @@ local function startSession(): ()
 		PuzzleTableService.register(session.puzzle, entry)
 	end
 
-	-- Briefing per role. PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu
-	-- apa / Tugas pertamamu". Tiap role menerima proyeksi berbeda, dan tidak
-	-- ada role yang menerima field solusi.
-	--
-	-- PRD §4: "Tiap kasus punya 2-3 pernyataan saksi/tersangka, minimal satu
-	-- berbohong." Saksi pembohong itu milik SATU varian (lihat `variants` di
-	-- `$defs.statement`), jadi pernyataan yang dikirim ke Director tidak boleh
-	-- diambil dari `briefings.Director.statements` apa adanya -- daftar statis
-	-- itu hanya memuat pernyataan yang berlaku di semua cabang. Daftar per
-	-- varian dihitung `SharedCaseLoader.projectForRole`, modul yang sama yang
-	-- dipakai untuk menyaring node; menyaring ulang di sini akan jadi salinan
-	-- kedua dari aturan `CaseGraph.statementAppliesTo`.
-	local briefings = loaded.briefings
-	if type(briefings) == "table" then
-		local directorStatements: { any } = {}
-		if variantId ~= nil then
-			local projectedDirector = SharedCaseLoader.projectForRole(loaded, variantId, "Director")
-			if
-				type(projectedDirector) == "table"
-				and type(projectedDirector.statements) == "table"
-			then
-				directorStatements = projectedDirector.statements
-			end
-		end
-
-		for userId, role in assigned do
-			local player = Players:GetPlayerByUserId(userId)
-			local briefing = briefings[role]
-			if player ~= nil and type(briefing) == "table" then
-				-- Disalin, bukan dimutasi: `briefing` masih menunjuk ke tabel
-				-- di dalam `loaded`, dan menulis ke sana akan mengubah data
-				-- kasus yang di-cache untuk sesi berikutnya.
-				local payload: { [string]: any } = table.clone(briefing)
-				if role == Roles.DIRECTOR and #directorStatements > 0 then
-					payload.statements = directorStatements
-				end
-
-				local projected = Net.forRole("briefing", role, payload)
-				if projected ~= nil then
-					remotes.SessionState:FireClient(player, projected)
-				end
-			end
+	-- PRD §9: Role Card per pemain. Isinya dirakit `sendBriefing`, satu tempat
+	-- yang dipakai juga saat pemain rejoin (PRD §8).
+	for userId, role in assigned do
+		local player = Players:GetPlayerByUserId(userId)
+		if player ~= nil then
+			sendBriefing(session, player, role)
 		end
 	end
 
@@ -976,6 +1199,8 @@ local function handleDeduce(player: Player, clueIds: any): ()
 	if current == nil then
 		return
 	end
+
+	touchPresence(player.UserId)
 
 	local role = roleOf(player.UserId)
 	if role ~= "Director" then
@@ -1125,6 +1350,8 @@ local function handleAccuse(player: Player, accusation: any): ()
 		return
 	end
 
+	touchPresence(player.UserId)
+
 	local role = roleOf(player.UserId)
 	if role ~= "Director" then
 		-- PRD §5: Director yang mengisi form tuduhan.
@@ -1212,6 +1439,8 @@ local function handleConfirm(player: Player, _: any): ()
 		return
 	end
 
+	touchPresence(player.UserId)
+
 	local role = roleOf(player.UserId)
 	if role == nil then
 		return
@@ -1270,6 +1499,8 @@ local function handleMarkContradiction(player: Player, payload: any): ()
 	if current == nil then
 		return
 	end
+
+	touchPresence(player.UserId)
 
 	local role = roleOf(player.UserId)
 	if role ~= "Director" then
@@ -1374,54 +1605,34 @@ local function handleMarkContradiction(player: Player, payload: any): ()
 	end
 end
 
--- PRD §7: Report Card. Client mengirim ID objek; server memutuskan apa yang
--- kembali.
---
--- Sebelum ini payload client diteruskan apa adanya ke `fireToRole`, dan itu
--- berarti client bisa mengarang `gives_key`, mengarang `title`, atau mengirim
--- objek yang tidak ada di kasus. Sekarang payload yang menyeberang DIRAKIT DI
--- SINI dari data sesi: id objek divalidasi terhadap lokasi, judul diambil dari
--- label objek, dan kunci diambil dari `LocationService` -- bukan dari client.
---
--- Pemeriksaan yang dilakukan, berurutan:
---   1. role pemain dikenal,
---   2. payload berupa tabel dan `object_id` bertipe string,
---   3. objek ada di lokasi sesi ini,
---   4. objek sudah bisa dicapai (belum tercapai = masih terkunci deduksi).
--- `gives_key` tidak ikut diperiksa dari client: nilainya tidak pernah dibaca
--- dari payload.
-local function handleReport(player: Player, payload: any): ()
-	local current = session
-	if current == nil then
-		return
-	end
+--[[
+	Merakit dan menyiarkan satu Report Card (PRD §4 langkah 2, §7).
 
-	local role = roleOf(player.UserId)
-	if role ~= Roles.SEARCHER then
-		-- PRD §6: Report Card adalah alat Searcher ("Searcher menekan Report").
-		-- Role lain tidak memeriksa objek di lokasi.
-		return
-	end
+	Dipisahkan dari `handleReport` supaya NPC Searcher memakai jalur yang SAMA.
+	PRD §8 menugaskan NPC Searcher "berjalan ke objek yang ditandai ping/pinpoint
+	dan melapor"; kalau laporannya dirakit ulang di loop NPC, dua tempat itu bisa
+	berbeda soal validasi mana yang berlaku.
 
-	if type(payload) ~= "table" then
-		return
-	end
+	`role` masuk sebagai argumen -- bukan dibaca dari pemain -- karena pemanggil
+	NPC tidak punya `Player`. Yang menyeberang ke client DIRAKIT DI SINI dari data
+	sesi: id objek divalidasi terhadap graf kasus DAN lokasi, judul diambil dari
+	label objek, dan kunci diambil dari `LocationService` -- bukan dari client.
+	`gives_key` tidak pernah dibaca dari payload, jadi client tidak bisa
+	mengarangnya.
 
-	-- Client hanya mengirim `object_id`. Lokasi dan label TIDAK dipercaya dari
-	-- client: keduanya dibaca dari data kasus, sehingga pemain tidak bisa
-	-- mengirim tag lokasi palsu ke clue board Director (PRD §4: laporan masuk
-	-- ke clue board). Payload lama yang membawa `location` sendiri diabaikan.
-	local objectId = (payload :: any).object_id
-	if type(objectId) ~= "string" or objectId == "" then
-		return
-	end
-
+	Pemeriksaan yang dilakukan, berurutan:
+	  1. objek ada di graf kasus dan bertipe `object`,
+	  2. objek aktif di varian sesi ini,
+	  3. objek ada di lokasi sesi ini,
+	  4. objek sudah bisa dicapai (belum tercapai = masih terkunci deduksi).
+]]
+local function reportObject(current: Session, role: string, objectId: string): boolean
 	local node = CaseGraph.nodeIndex(current.case)[objectId]
 	if node == nil or node.type ~= "object" then
 		-- Laporan atas node yang bukan objek di kasus ini tidak punya arti:
 		-- tidak ada yang bisa ditampilkan di clue board.
 		warn(string.format("[Triangulate] Report ditolak: '%s' bukan objek kasus", objectId))
-		return
+		return false
 	end
 
 	local variantId = current.variantId
@@ -1432,7 +1643,7 @@ local function handleReport(player: Player, payload: any): ()
 				objectId
 			)
 		)
-		return
+		return false
 	end
 
 	-- Graf kasus dan dunia sesi adalah dua sumber yang bisa berbeda, dan yang
@@ -1448,14 +1659,14 @@ local function handleReport(player: Player, payload: any): ()
 				current.location.location
 			)
 		)
-		return
+		return false
 	end
 
 	if not LocationService.isInspectable(current.location, objectId) then
 		warn(
 			string.format("[Triangulate] laporan objek '%s' ditolak: belum bisa dicapai", objectId)
 		)
-		return
+		return false
 	end
 
 	TelemetryService.record(current.telemetry, {
@@ -1494,6 +1705,50 @@ local function handleReport(player: Player, payload: any): ()
 			else nil,
 	}
 	fireToRole("ReportCard", "report_card", report)
+	return true
+end
+
+-- PRD §7: Report Card. Client mengirim ID objek; server memutuskan apa yang
+-- kembali.
+--
+-- Yang diperiksa DI SINI hanya hal yang milik kanal remote: role pengirim harus
+-- Searcher (PRD §6 -- Report Card adalah alat Searcher), dan payload harus
+-- membawa `object_id` bertipe string. Sebelum ini payload client diteruskan apa
+-- adanya ke `fireToRole`, dan itu berarti client bisa mengarang `gives_key`,
+-- mengarang `title`, atau mengirim objek yang tidak ada di kasus.
+--
+-- Validasi isinya ada di `reportObject` -- satu tempat yang dipakai juga oleh
+-- loop NPC Searcher.
+
+local function handleReport(player: Player, payload: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	touchPresence(player.UserId)
+
+	local role = roleOf(player.UserId)
+	if role ~= Roles.SEARCHER then
+		-- PRD §6: Report Card adalah alat Searcher ("Searcher menekan Report").
+		-- Role lain tidak memeriksa objek di lokasi.
+		return
+	end
+
+	if type(payload) ~= "table" then
+		return
+	end
+
+	-- Client hanya mengirim `object_id`. Lokasi dan label TIDAK dipercaya dari
+	-- client: keduanya dibaca dari data kasus, sehingga pemain tidak bisa
+	-- mengirim tag lokasi palsu ke clue board Director (PRD §4: laporan masuk
+	-- ke clue board). Payload lama yang membawa `location` sendiri diabaikan.
+	local objectId = (payload :: any).object_id
+	if type(objectId) ~= "string" or objectId == "" then
+		return
+	end
+
+	reportObject(current, role, objectId)
 end
 
 -- PRD §6: mini-aksi Searcher (senter UV, buka laci dengan hold, lockpick).
@@ -1515,6 +1770,8 @@ local function handleInspect(player: Player, payload: any): ()
 	if current == nil then
 		return
 	end
+
+	touchPresence(player.UserId)
 
 	local role = roleOf(player.UserId)
 	if role ~= Roles.SEARCHER then
@@ -1619,63 +1876,30 @@ local function clueCardById(case: CaseSource.Case, id: string): { [string]: any 
 	return nil
 end
 
-local function handlePlacePiece(player: Player, payload: any): ()
-	local current = session
-	if current == nil then
-		return
-	end
+--[[
+	Menerapkan satu penempatan potongan dan menyiarkan akibatnya.
 
-	-- PRD §3 dan §8: Handler pemilik meja; Director boleh mengambil alih pada
-	-- mode 2 pemain. Searcher tidak pernah menyentuh meja.
-	local role = roleOf(player.UserId)
-	if not PuzzleTableService.canPlace(role) then
-		return
-	end
+	Dipisahkan dari `handlePlacePiece` supaya loop NPC Handler memakai jalur yang
+	SAMA: satu tempat yang tahu bahwa bukti yang selesai mengirim Clue Card ke
+	Director, membuka meja berikutnya, memperbarui state sesi, dan menyegarkan
+	Table Preview. Salinan kedua dari aturan itu akan membuat NPC dan manusia
+	menghasilkan efek berbeda untuk penempatan yang sama -- dan justru jalur NPC
+	yang tidak akan terlihat saat diuji.
 
-	local pieceId, u, v = PuzzleTableService.parsePlacement(payload)
-	if pieceId == nil or u == nil or v == nil then
-		return
-	end
-
-	-- Meja mana yang sedang disentuh pemain ini. Node id dikirim client hanya
-	-- sebagai penanda meja, dan tetap divalidasi terhadap meja yang memang ada
-	-- di sesi ini -- client tidak bisa mengarang node id.
-	local nodeId = (payload :: { [string]: any }).node_id
-	if type(nodeId) ~= "string" then
-		return
-	end
-
+	Pemanggil bertanggung jawab memeriksa role dan bahwa meja memang sudah
+	terbuka; fungsi ini menganggap keduanya sudah lolos.
+]]
+local function settlePlacement(
+	current: Session,
+	nodeId: string,
+	pieceId: string,
+	u: number,
+	v: number
+): ()
 	local entry = PuzzleTableService.get(current.puzzle, nodeId)
 	if entry == nil then
 		return
 	end
-
-	-- PRD §4: "Kunci membuka potongan bukti di meja." Meja yang belum terbuka
-	-- tidak boleh bisa dimajukan -- kalau tidak, seluruh gerbang kunci di
-	-- `LocationService` bisa dilewati hanya dengan mengirim `PlacePiece` ke
-	-- node yang sudah diketahui id-nya dari data.
-	if
-		not PuzzleTableService.isUnlocked(
-			current.puzzle,
-			nodeId,
-			LocationService.keysHeld(current.location)
-		)
-	then
-		warn(
-			string.format(
-				"[Triangulate] penempatan di meja '%s' ditolak: kuncinya belum dipegang tim",
-				nodeId
-			)
-		)
-		return
-	end
-
-	TelemetryService.record(current.telemetry, {
-		kind = "input",
-		role = role,
-		t = telemetryMs(),
-		detail = nodeId,
-	})
 
 	local result, solved = PuzzleTableService.place(current.puzzle, nodeId, pieceId, u, v)
 	if result == nil then
@@ -1742,6 +1966,69 @@ local function handlePlacePiece(player: Player, payload: any): ()
 	})
 end
 
+local function handlePlacePiece(player: Player, payload: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	touchPresence(player.UserId)
+
+	-- PRD §3 dan §8: Handler pemilik meja; Director boleh mengambil alih pada
+	-- mode 2 pemain. Searcher tidak pernah menyentuh meja.
+	local role = roleOf(player.UserId)
+	if not PuzzleTableService.canPlace(role) then
+		return
+	end
+
+	local pieceId, u, v = PuzzleTableService.parsePlacement(payload)
+	if pieceId == nil or u == nil or v == nil then
+		return
+	end
+
+	-- Meja mana yang sedang disentuh pemain ini. Node id dikirim client hanya
+	-- sebagai penanda meja, dan tetap divalidasi terhadap meja yang memang ada
+	-- di sesi ini -- client tidak bisa mengarang node id.
+	local nodeId = (payload :: { [string]: any }).node_id
+	if type(nodeId) ~= "string" then
+		return
+	end
+
+	local entry = PuzzleTableService.get(current.puzzle, nodeId)
+	if entry == nil then
+		return
+	end
+
+	-- PRD §4: "Kunci membuka potongan bukti di meja." Meja yang belum terbuka
+	-- tidak boleh bisa dimajukan -- kalau tidak, seluruh gerbang kunci di
+	-- `LocationService` bisa dilewati hanya dengan mengirim `PlacePiece` ke
+	-- node yang sudah diketahui id-nya dari data.
+	if
+		not PuzzleTableService.isUnlocked(
+			current.puzzle,
+			nodeId,
+			LocationService.keysHeld(current.location)
+		)
+	then
+		warn(
+			string.format(
+				"[Triangulate] penempatan di meja '%s' ditolak: kuncinya belum dipegang tim",
+				nodeId
+			)
+		)
+		return
+	end
+
+	TelemetryService.record(current.telemetry, {
+		kind = "input",
+		role = role,
+		t = telemetryMs(),
+		detail = nodeId,
+	})
+
+	settlePlacement(current, nodeId, pieceId, u, v)
+end
+
 -- PRD §7: "Ping Wheel kontekstual ... Roda dengan 6-8 frasa yang berubah
 -- sesuai role dan situasi."
 --
@@ -1754,6 +2041,8 @@ local function handlePing(player: Player, phraseId: any): ()
 	if current == nil then
 		return
 	end
+
+	touchPresence(player.UserId)
 
 	local role = roleOf(player.UserId)
 	if role == nil then
@@ -1812,6 +2101,8 @@ local function handleSetTarget(player: Player, targetId: any): ()
 	if current == nil then
 		return
 	end
+
+	touchPresence(player.UserId)
 
 	local role = roleOf(player.UserId)
 	if role ~= Roles.HANDLER then
@@ -1880,6 +2171,18 @@ local function handleSetTarget(player: Player, targetId: any): ()
 		bearing = LocationMap.bearingFromEntry(location, objectId),
 	}
 
+	-- PRD §8: NPC Searcher "berjalan ke objek yang ditandai ping/pinpoint dan
+	-- melapor". Marker ini yang jadi perintahnya, jadi id objeknya disimpan di
+	-- sesi -- bukan di pemain: penanda adalah perintah tim, dan Handler yang
+	-- keluar tidak boleh membatalkan perintahnya.
+	--
+	-- Penanda yang BERPINDAH membatalkan catatan laporan NPC: objek yang sama
+	-- ditandai ulang berarti perintah baru, dan NPC harus melapornya lagi.
+	if current.targetObjectId ~= objectId then
+		current.npcReportedObjectId = nil
+	end
+	current.targetObjectId = objectId
+
 	-- Hanya Searcher yang menerima marker: `Net.CLIENT_VIEWS.target_marker`
 	-- sengaja tidak punya entri untuk Handler (pengirim) dan Director.
 	fireToRole("TargetMarker", "target_marker", payload)
@@ -1896,75 +2199,439 @@ remotes.SetTarget.OnServerEvent:Connect(handleSetTarget)
 remotes.Inspect.OnServerEvent:Connect(handleInspect)
 
 -- ---------------------------------------------------------------------------
--- 7. Lobby
+-- 7. Lobby, NPC, dan AFK/rejoin
 -- ---------------------------------------------------------------------------
 
 -- PRD §8: "Timer lobby 45 detik. Jika belum 3 manusia, role kosong diisi NPC.
 -- Pemain bisa memilih tunggu sampai 90 detik."
 --
--- Yang BELUM terpasang di sini, dan kenapa: PRD §17 menempatkan "Lobby,
--- preferensi role, NPC, AFK/rejoin" di minggu 5. Jadi scaffold minggu 0 ini
--- memakai jalur sederhana -- sesi mulai saat 3 pemain sudah ada -- dan belum
--- menjalankan:
---   * timer 45/90 detik (`Matchmaking.deadline`/`secondsLeft` sudah ada dan
---     sudah diuji, belum ada penjadwal yang memanggilnya),
---   * ready check (`Matchmaking.readyFailures`/`canStart` sudah ada dan sudah
---     diuji, belum ada UI yang menyetel `ready`),
---   * preferensi role dari pemain: `preferences` di bawah masih `Roles.ALL`,
---     artinya "tanpa preferensi". Rotasi dan prioritas keadilan di
---     `RoleAssignment` sudah diuji dan aktif, tetapi belum diberi input nyata.
---   * perilaku NPC untuk `session.npcRoles`.
--- Semuanya bernama dan bernomor baris, jadi minggu 5 mengisi pemanggil.
-local function lobbyConfig(): Matchmaking.Config
-	return {
-		maxPlayers = Config.MAX_PLAYERS,
-		lobbySeconds = Config.LOBBY_SECONDS,
-		extendedSeconds = Config.LOBBY_EXTENDED_SECONDS,
-		readyCheckSeconds = Config.READY_CHECK_SECONDS,
-	}
-end
+-- Pembagiannya: `LobbyFlow` memegang urutan fase (menunggu -> ready check ->
+-- mulai), `Matchmaking` memegang isi lobby, `SessionPresence` memegang AFK dan
+-- jendela rejoin, dan `NPCController` memutuskan aksi NPC. Berkas ini glue: ia
+-- menerjemahkan peristiwa Roblox (pemain masuk/keluar, remote dari client)
+-- menjadi panggilan ke keempatnya, dan MENJALANKAN keputusan mereka. Tidak ada
+-- satu pun angka kebijakan yang ditulis ulang di sini -- semuanya dari
+-- `shared/Config.luau` dan `shared/Roles.luau`.
 
-Players.PlayerAdded:Connect(function(player: Player)
-	Matchmaking.join(lobby, {
+local function joinLobby(player: Player, now: number): ()
+	local ok, err = Matchmaking.join(lobby, {
 		id = player.UserId,
+		-- PRD §3: pemain memilih 2 preferensi role. `Roles.ALL` adalah penanda
+		-- "belum memilih", bukan pilihan: `LobbyFlow` menolaknya sebagai
+		-- preferensi (panjangnya di luar 1..2), sehingga tombol siap belum
+		-- berguna sebelum pemain benar-benar memilih.
 		preferences = Roles.ALL,
 		ready = false,
-		joinedAt = os.clock(),
+		joinedAt = now,
 	}, lobbyConfig())
 
-	if #lobby.players >= Config.MAX_PLAYERS then
-		startSession()
+	if not ok then
+		warn(
+			string.format(
+				"[Triangulate] pemain %d gagal masuk lobby: %s",
+				player.UserId,
+				tostring(err)
+			)
+		)
+		return
+	end
+
+	-- PRD §8 dan skema `lobby_enter`: pemain masuk ke lobby/matchmaking.
+	-- `party_size` 1 karena MVP belum punya konsep party: private server
+	-- dijalankan `FriendSession`, dan pemainnya masuk satu per satu ke instance
+	-- yang sama. `waited_from_ms` 0 -- lobby adalah hal pertama yang dilihat
+	-- pemain, jadi tidak ada antrean sebelum ini yang bisa diukur.
+	announceLobby("lobby_enter", {
+		mode_preference = "public",
+		party_size = 1,
+		waited_from_ms = 0,
+	})
+end
+
+--[[
+	Meja bukti yang kuncinya sudah dipegang tim, untuk loop NPC Handler.
+
+	Memakai `PuzzleTableService.isUnlocked` -- bukan menyalin aturan `needs` di
+	sini -- supaya NPC Handler melihat meja yang terbuka dengan aturan yang SAMA
+	persis seperti `handlePlacePiece` menolak penempatan: `needs` kosong atau
+	sudah terpenuhi. Aturan `needs` yang disalin ke sini akan jadi konvensi kedua
+	yang bisa berbeda pendapat dengan gerbang penempatan, dan bedanya hanya akan
+	terlihat sebagai "NPC merakit meja yang seharusnya masih terkunci".
+
+	Di `gallery_01.json` semua meja bukti punya `needs` berisi kunci, jadi
+	himpunan ini kosong sampai Searcher manusia memeriksa objek rantai pertama.
+	NPC Handler memang dirancang merakit "setelah kunci diberikan" (EXTA-58
+	poin 4), bukan mengarang kunci sendiri.
+]]
+local function unlockedEvidence(current: Session): { [string]: boolean }
+	local keys = LocationService.keysHeld(current.location)
+	local unlocked: { [string]: boolean } = {}
+	for _, nodeId in current.puzzle.order do
+		if PuzzleTableService.isUnlocked(current.puzzle, nodeId, keys) then
+			unlocked[nodeId] = true
+		end
+	end
+	return unlocked
+end
+
+--[[
+	Satu langkah NPC untuk seluruh role yang SEDANG dijalankan NPC (PRD §8).
+
+	Yang diiterasi `current.npcDriven`, bukan `current.npcRoles`: role yang
+	diambil alih karena pemainnya AFK harus benar-benar dijalankan, bukan hanya
+	tercatat. `npcRoles` tetap dipakai untuk membedakan "kosong sejak awal" dari
+	"ditinggalkan pemain" saat mengisi `replaced_npc`.
+
+	Handler dibatasi `Config.NPC_ASSEMBLY_SECONDS` per potongan: PRD §8 meminta
+	"kecepatan lambat", dan tanpa jeda itu satu meja selesai dalam sekejap --
+	NPC akan menyelesaikan kasus lebih cepat daripada pemain.
+]]
+local function npcStep(current: Session): ()
+	local unlocked: { [string]: boolean }? = nil
+
+	for role in current.npcDriven do
+		local state: { [string]: any } = {}
+		if role == Roles.SEARCHER then
+			state.pingedObject = current.targetObjectId
+		elseif role == Roles.HANDLER then
+			if unlocked == nil then
+				unlocked = unlockedEvidence(current)
+			end
+			local entry = PuzzleTableService.firstUnlocked(current.puzzle, unlocked)
+			if entry ~= nil then
+				state.unlockedEvidence = entry.node_id
+			end
+		end
+
+		local action = NPCController.nextAction(role, state)
+		local target = action.target
+
+		if action.kind == "move_to_object" and target ~= nil then
+			-- PRD §8: NPC Searcher "berjalan ke objek yang ditandai ping/pinpoint
+			-- dan melapor". Sekali per penanda: laporan yang sama diulang tiap
+			-- tick akan mengirim Clue Card kembar ke clue board Director.
+			if current.npcReportedObjectId ~= target then
+				-- Penanda hanya dicatat saat laporannya BENAR-BENAR terkirim.
+				-- Objek yang ditandai Handler bisa masih terkunci deduksi, dan
+				-- NPC harus melapornya begitu terkunci itu terbuka -- bukan
+				-- melewatinya karena pernah gagal sekali.
+				if reportObject(current, Roles.SEARCHER, target) then
+					current.npcReportedObjectId = target
+				end
+			end
+		elseif action.kind == "assemble_slowly" and target ~= nil then
+			local now = os.clock()
+			if now - current.npcAssembledAt >= Config.NPC_ASSEMBLY_SECONDS then
+				local entry = PuzzleTableService.get(current.puzzle, target)
+				if entry ~= nil then
+					local pieceId, u, v = PuzzleTableService.nextPlacement(entry)
+					if pieceId ~= nil and u ~= nil and v ~= nil then
+						-- Jalur yang sama dengan `handlePlacePiece`: satu tempat
+						-- yang tahu bahwa bukti selesai mengirim Clue Card,
+						-- membuka meja berikutnya, dan menyegarkan Table Preview.
+						settlePlacement(current, target, pieceId, u, v)
+						current.npcAssembledAt = now
+					end
+				end
+			end
+		end
+		-- `unsupported` (Director) tidak melakukan apa pun: NPC Director adalah
+		-- P1 (PRD §8 tabel prioritas NPC, §16). Diam, bukan diam-diam diberi
+		-- kemampuan yang belum dirancang.
+	end
+end
+
+--[[
+	Satu langkah kehadiran: pengambilalihan AFK/disconnect dan pembukaan slot
+	(PRD §8).
+
+	`SessionPresence.takeovers` mengembalikan paling banyak SATU pemain per
+	panggilan -- supaya handover tidak bertumpuk dalam satu tick -- jadi fungsi
+	ini dipanggil tiap tick, bukan sekali per sesi. Kandidat lain dilaporkan
+	pada tick berikutnya, bukan hilang.
+]]
+local function presenceStep(current: Session): ()
+	local now = os.clock()
+
+	for _, takeover in SessionPresence.takeovers(presence, current.roles, now, Config.AFK_SECONDS) do
+		current.npcDriven[takeover.role] = true
+		announceLobby("npc_takeover", {
+			role = takeover.role,
+			trigger = takeover.reason,
+			takeover_player_id = takeover.userId,
+		})
+	end
+
+	for _, slot in SessionPresence.releasedSlots(presence, now, Config.REJOIN_HOLD_SECONDS) do
+		-- PRD §8: "Setelah 3 menit slot dibuka untuk pemain pengganti
+		-- (join-in-progress) atau tetap NPC." Join-in-progress tidak ada di P0
+		-- (PRD §16), jadi yang berlaku adalah cabang keduanya: NPC tetap
+		-- menjalankan role itu. `npcDriven` sengaja TIDAK dikosongkan di sini --
+		-- mengosongkannya akan mematikan role yang sudah berjalan dan
+		-- melanggar PRD §6 ("tidak ada yang menganggur").
+		print(
+			string.format(
+				"[Triangulate] slot role %s (pemain %d) dibuka setelah %d detik tahanan; join-in-progress belum ada di P0, NPC tetap menjalankan role itu",
+				slot.role,
+				slot.userId,
+				Config.REJOIN_HOLD_SECONDS
+			)
+		)
+	end
+end
+
+--[[
+	Pemain masuk (PRD §8).
+
+	Tiga jalur, dan urutannya penting: rejoin ke slot yang ditahan, masuk lobby,
+	atau tidak dapat kursi. Rejoin diperiksa LEBIH DULU supaya pemain yang
+	kembali tidak dimasukkan ke lobby yang sudah selesai dan tidak diberi role
+	baru -- PRD §8 menahan slotnya supaya ia melanjutkan pekerjaan yang sama.
+]]
+local function onPlayerAdded(player: Player): ()
+	local now = os.clock()
+	local current = session
+
+	if current == nil then
+		joinLobby(player, now)
+		SessionPresence.touch(presence, player.UserId, now)
+		pushLobbyState()
+		return
+	end
+
+	-- Dibaca SEBELUM `rejoin`, karena `rejoin` membuang catatan disconnect-nya.
+	local record = presence.disconnects[player.UserId]
+	local awayMs: number? = nil
+	local replacedNpc = false
+	if record ~= nil then
+		awayMs = math.floor((now - record.at) * 1000)
+		replacedNpc = current.npcDriven[record.role] == true
+	end
+
+	local restored, role =
+		SessionPresence.rejoin(presence, player.UserId, now, Config.REJOIN_HOLD_SECONDS)
+
+	if restored and role ~= nil then
+		-- Role yang sama, bukan role baru: pemain yang kembali di tengah kasus
+		-- melanjutkan pekerjaannya, dan peta informasi tim tidak berubah di
+		-- tengah permainan.
+		current.roles[player.UserId] = role
+		current.npcDriven[role] = nil
+		SessionPresence.touch(presence, player.UserId, now)
+		announceLobby("player_rejoined", {
+			t_since_case_start_ms = math.floor((now - current.startedAt) * 1000),
+			away_duration_ms = awayMs,
+			replaced_npc = replacedNpc,
+		})
+		sendBriefing(current, player, role)
+		pushSessionState()
+		pushLobbyState()
+		return
+	end
+
+	-- Slot sudah dibuka, atau pemain ini memang tidak pernah punya kursi. Tidak
+	-- dimasukkan ke lobby: lobby sudah selesai, dan menambahkannya akan membuat
+	-- `pushLobbyState` mengirim keadaan lobby yang tidak lagi berlaku.
+	SessionPresence.touch(presence, player.UserId, now)
+	print(
+		string.format(
+			"[Triangulate] pemain %d masuk saat kasus berjalan tanpa slot yang ditahan; tidak ikut sesi ini",
+			player.UserId
+		)
+	)
+end
+
+--[[
+	Pemain keluar (PRD §8).
+
+	Role TIDAK dihapus dari `current.roles`: slotnya ditahan untuk rejoin, dan
+	`roleOf` yang membacanya akan menolak semua aksi pemain yang kembali kalau
+	role-nya sudah hilang. Yang menutup slot adalah `SessionPresence.releasedSlots`
+	setelah masa tahanan habis, bukan kepergian pemainnya.
+]]
+local function onPlayerRemoving(player: Player): ()
+	local now = os.clock()
+	local current = session
+
+	if current ~= nil then
+		local role = current.roles[player.UserId]
+		if role ~= nil then
+			SessionPresence.markDisconnected(presence, player.UserId, role, now)
+			announceLobby("player_left", {
+				reason = "disconnect",
+				t_since_case_start_ms = math.floor((now - current.startedAt) * 1000),
+				case_completed = current.accusation.resolved,
+				-- PRD §8: "slot ditahan 3 menit". Angkanya diambil dari
+				-- `Config`, bukan dari skema: `docs/metrics/skema-event-telemetri.md`
+				-- menulis 300000 ms (5 menit), sedangkan PRD §8 dan
+				-- `Config.REJOIN_HOLD_SECONDS` sama-sama 3 menit. Yang
+				-- dilaporkan adalah masa tahanan yang BENAR-BENAR berlaku.
+				rejoin_window_ms = Config.REJOIN_HOLD_SECONDS * 1000,
+			})
+			pushLobbyState()
+			return
+		end
+	end
+
+	Matchmaking.leave(lobby, player.UserId)
+	LobbyFlow.forgetPlayer(flow, player.UserId)
+	pushLobbyState()
+end
+
+--[[
+	`lobby_exit` untuk lobby yang benar-benar mulai (PRD §8, skema §3.1).
+
+	`waited_ms` diukur dari pemain yang paling awal masuk, bukan dari
+	`lobby.createdAt`: ronde ready check yang gagal mengulang `createdAt`, dan
+	pemain yang sudah menunggu sejak ronde pertama tidak boleh terlihat menunggu
+	sebentar. `human_count` dan `npc_count` dibaca dari sesi yang baru berdiri --
+	itulah pembagian role yang benar-benar dipakai kasus ini.
+]]
+local function announceLobbyExit(now: number): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	local humanCount = 0
+	for _ in current.roles do
+		humanCount += 1
+	end
+
+	local npcCount = 0
+	for _ in current.npcDriven do
+		npcCount += 1
+	end
+
+	local earliest: number? = nil
+	for _, entry in lobby.players do
+		if earliest == nil or entry.joinedAt < earliest then
+			earliest = entry.joinedAt
+		end
+	end
+
+	local waitedMs: number? = nil
+	if earliest ~= nil then
+		waitedMs = math.floor((now - earliest) * 1000)
+	end
+
+	announceLobby("lobby_exit", {
+		reason = "started",
+		waited_ms = waitedMs,
+		human_count = humanCount,
+		npc_count = npcCount,
+	})
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- Pemain yang sudah ada saat skrip ini berjalan (play-solo di Studio, atau
+-- server yang sudah terisi): jalur yang sama dengan `PlayerAdded`, supaya tidak
+-- ada dua perilaku "masuk lobby" yang bisa berbeda.
+for _, player in Players:GetPlayers() do
+	onPlayerAdded(player)
+end
+
+remotes.SubmitPreferences.OnServerEvent:Connect(function(player: Player, preferences: any)
+	LobbyFlow.submitPreferences(flow, player.UserId, preferences)
+	pushLobbyState()
+end)
+
+remotes.SetReady.OnServerEvent:Connect(function(player: Player, ready: any)
+	LobbyFlow.setReady(flow, player.UserId, ready == true)
+	pushLobbyState()
+end)
+
+remotes.RequestSwap.OnServerEvent:Connect(function(player: Player, targetUserId: any)
+	if type(targetUserId) ~= "number" then
+		return
+	end
+
+	-- PRD §8: "Pemain boleh tukar role di lobby (saling setuju)." Selagi sesi
+	-- belum ada, peta penugasan satu-satunya adalah `preSessionRoles`; setelah
+	-- sesi ada, `session.roles`.
+	local current = session
+	local assigned = if current ~= nil then current.roles else preSessionRoles
+
+	-- Satu permintaan hanya DICATAT; penukaran terjadi saat pihak lain meminta
+	-- arah sebaliknya. Jadi `false` di sini bukan kegagalan, dan `role_assigned`
+	-- baru dikirim saat tukarnya benar-benar terjadi.
+	if LobbyFlow.requestSwap(flow, player.UserId, targetUserId, assigned) then
+		local role = assigned[player.UserId]
+		if role ~= nil then
+			local entry = Matchmaking.find(lobby, player.UserId)
+			local waitedMs: number? = nil
+			if entry ~= nil then
+				waitedMs = math.floor((os.clock() - entry.joinedAt) * 1000)
+			end
+
+			announceLobby("role_assigned", {
+				role = role,
+				assignment_reason = "swap",
+				preference_1 = if entry ~= nil then entry.preferences[1] else nil,
+				preference_2 = if entry ~= nil then entry.preferences[2] else nil,
+				lobby_wait_ms = waitedMs,
+			})
+		end
+		pushLobbyState()
 	end
 end)
 
-Players.PlayerRemoving:Connect(function(player: Player)
-	Matchmaking.leave(lobby, player.UserId)
-end)
-
-for _, player in Players:GetPlayers() do
-	Matchmaking.join(lobby, {
-		id = player.UserId,
-		preferences = Roles.ALL,
-		ready = false,
-		joinedAt = os.clock(),
-	}, lobbyConfig())
-end
-
-if #lobby.players >= Config.MAX_PLAYERS then
-	startSession()
-end
-
+-- Satu loop untuk tiga hal yang berjalan bersamaan (PRD §8):
+--   * fase lobby   -- hanya selagi `session == nil`;
+--   * langkah NPC  -- hanya setelah sesi ada, untuk role di `npcDriven`;
+--   * kehadiran    -- hanya setelah sesi ada, untuk SEMUA role, bukan hanya
+--     role yang dipegang NPC.
+--
 -- Deadline lobby diperiksa berkala, bukan dengan satu `task.delay`, supaya
 -- pemain yang bergabung di tengah tidak memperpanjang timer secara tak sengaja.
 task.spawn(function()
-	while session == nil do
-		task.wait(1)
-		if
-			Matchmaking.secondsLeft(lobby, os.clock(), lobbyConfig()) <= 0
-			and #lobby.players > 0
-		then
-			startSession()
+	local lastSeconds = LobbyFlow.secondsLeft(flow, os.clock())
+
+	while true do
+		local now = os.clock()
+
+		if session == nil then
+			local result = LobbyFlow.tick(flow, now)
+
+			for _, playerId in result.dropped do
+				-- Pemain yang tidak menekan siap diganti (PRD §8, ready check
+				-- 10 detik). `kicked`, bukan `disconnect`: pemainnya masih di
+				-- server, yang hilang adalah kursinya.
+				announceLobby("player_left", {
+					reason = "kicked",
+					t_since_case_start_ms = nil,
+					case_completed = false,
+					rejoin_window_ms = nil,
+				})
+				print(
+					string.format(
+						"[Triangulate] pemain %d diganti karena tidak siap pada ready check",
+						playerId
+					)
+				)
+			end
+
+			local seconds = LobbyFlow.secondsLeft(flow, now)
+			if result.changed or seconds ~= lastSeconds then
+				pushLobbyState()
+				lastSeconds = seconds
+			end
+
+			if result.phase == "started" then
+				startSession()
+				announceLobbyExit(now)
+			end
 		end
+
+		local current = session
+		if current ~= nil then
+			npcStep(current)
+			presenceStep(current)
+		end
+
+		task.wait(1)
 	end
 end)
 

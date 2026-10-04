@@ -36,7 +36,22 @@ assert(nodeById["clue_guard_off"] ~= nil, "fixture harus punya clue_guard_off")
 -- Beberapa view sengaja disuntik field rahasia supaya terbukti proyeksinya
 -- benar-benar menyaring, bukan sekadar tidak diberi apa-apa.
 local function payloadFor(view: string, role: string): { [string]: any }
-	if view == "briefing" then
+	if view == "lobby_state" then
+		-- PRD §8: payload lobby yang dirakit `LobbyFlow.snapshot`, dengan
+		-- `solution` disuntik -- sama seperti `session_state` di bawah. Kalau
+		-- seseorang kelak menambahkan field solusi ke snapshot lobby, sweep ini
+		-- yang menangkapnya, bukan uji manual.
+		return {
+			phase = "ready_check",
+			seconds_left = 8,
+			player_count = 2,
+			ready_count = 1,
+			max_players = 3,
+			preferences = { "Handler", "Searcher" },
+			ready = true,
+			solution = solution,
+		}
+	elseif view == "briefing" then
 		return gallery.briefings[role]
 	elseif view == "clue_card" then
 		local node = nodeById["clue_guard_off"]
@@ -196,9 +211,9 @@ for view, byRole in Net.CLIENT_VIEWS do
 	end
 end
 
--- 34 pasangan view x role dari 14 view:
---   * 8 view x 3 role = 24 -- `briefing`, `clue_card`, `deduction`,
---     `session_state`, `report_card`, `ping`, `accusation_result`,
+-- 37 pasangan view x role dari 15 view:
+--   * 9 view x 3 role = 27 -- `lobby_state`, `briefing`, `clue_card`,
+--     `deduction`, `session_state`, `report_card`, `ping`, `accusation_result`,
 --     `accusation_options`;
 --   * 4 view x 2 role = 8 -- `pinpoint` tanpa Handler (PRD §3: ia di meja,
 --     bukan di lokasi), `target_marker` tanpa Director (PRD §7: ia tidak
@@ -210,8 +225,8 @@ end
 -- Pasangan yang tidak ada itu sengaja: `Net.forRole` mengembalikan nil untuknya,
 -- dan nil berarti "jangan kirim", bukan kelalaian.
 Harness.check(
-	pairsChecked == 34,
-	string.format("kebocoran: 14 view x role tersapu (terperiksa: %d)", pairsChecked)
+	pairsChecked == 37,
+	string.format("kebocoran: 15 view x role tersapu (terperiksa: %d)", pairsChecked)
 )
 
 Harness.suite("kebocoran: kontrol detektor")

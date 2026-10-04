@@ -37,6 +37,10 @@ local SECRET_FIELDS: { string } = {
 }
 
 local REMOTE_NAMES: { string } = {
+	-- PRD §8: lobby adalah fase SEBELUM sesi. `LobbyState` adalah payload
+	-- pertama yang menyeberang ke client, dan tiga remote lobby di ujung daftar
+	-- satu-satunya yang boleh dikirim client selama fase itu.
+	"LobbyState",
 	"SessionState",
 	"ClueCard",
 	"TargetMarker",
@@ -59,6 +63,9 @@ local REMOTE_NAMES: { string } = {
 	"ContradictionResult",
 	"TablePreview",
 	"Inspect",
+	"SubmitPreferences",
+	"SetReady",
+	"RequestSwap",
 }
 
 -- Remote yang arahnya server -> client.
@@ -69,6 +76,7 @@ local REMOTE_NAMES: { string } = {
 -- melanggar pemisahan arah yang diuji `tests/net.spec.luau` -- dan pemisahan itu
 -- yang membuat tiap kanal bisa punya validasi sendiri.
 local SERVER_TO_CLIENT: { [string]: boolean } = {
+	LobbyState = true,
 	SessionState = true,
 	ClueCard = true,
 	TargetMarker = true,
@@ -106,6 +114,15 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	-- melaporkan "saya mulai/selesai/batal memeriksa objek X", server yang
 	-- memutuskan apakah itu sah dan kunci apa yang diberikan.
 	Inspect = true,
+	-- PRD §3: pemain memilih 2 preferensi role SEBELUM matchmaking.
+	SubmitPreferences = true,
+	-- PRD §8: ready check 10 detik sebelum mulai; pemain yang tidak siap
+	-- diganti NPC.
+	SetReady = true,
+	-- PRD §8: "Pemain boleh tukar role di lobby (saling setuju)." Client hanya
+	-- MENGIRIM permintaan; penukaran terjadi saat pihak lain meminta arah
+	-- sebaliknya, dan itu diputuskan `LobbyFlow.requestSwap` di server.
+	RequestSwap = true,
 }
 
 -- Field yang boleh dilihat tiap role, per jenis payload.
@@ -114,6 +131,45 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 -- memegang informasi berbeda. Searcher tidak boleh tahu isi meja Handler,
 -- dan tidak ada role yang boleh tahu field solusi.
 local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
+	-- PRD §3, §8: layar lobby -- pemilihan 2 preferensi, tombol siap, dan
+	-- hitungan pemain. Ketiga role menerima bentuk yang sama; yang membedakan
+	-- hanya isinya, karena `preferences`/`ready` diisi `LobbyFlow.snapshot`
+	-- hanya untuk pemain yang benar-benar ada di lobby.
+	--
+	-- Yang sengaja TIDAK ada di sini: penugasan role. Penugasan baru ada setelah
+	-- sesi dimulai (PRD §8: matchmaking menetapkan role SETELAH preferensi
+	-- terkumpul), dan menaruhnya di payload lobby akan memberi tiap pemain
+	-- daftar role pemain lain sebelum waktunya.
+	lobby_state = {
+		Searcher = {
+			"phase",
+			"seconds_left",
+			"player_count",
+			"ready_count",
+			"max_players",
+			"preferences",
+			"ready",
+		},
+		Handler = {
+			"phase",
+			"seconds_left",
+			"player_count",
+			"ready_count",
+			"max_players",
+			"preferences",
+			"ready",
+		},
+		Director = {
+			"phase",
+			"seconds_left",
+			"player_count",
+			"ready_count",
+			"max_players",
+			"preferences",
+			"ready",
+		},
+	},
+
 	-- PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu apa / Tugas pertamamu".
 	--
 	-- `briefing.statements` (Director) adalah satu-satunya jalur pernyataan
