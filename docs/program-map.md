@@ -273,7 +273,7 @@ Diurutkan berdasarkan dampak — seberapa banyak pekerjaan lain yang bergantung 
 
 ### K-1. Perbaiki environment EXTA-55…EXTA-61 (dampak: seluruh jalur kritis)
 
-**Masalah:** ketujuh issue gagal di `prepare execution environment` karena project resource menunjuk `local_directory "/Users/mac/Documents/Roblox"` dengan `execution_mode=worktree`, sedangkan direktori itu bukan git repository dan tidak punya commit untuk di-branch.
+**Masalah:** ketujuh issue gagal di `prepare execution environment` karena project resource menunjuk `local_directory "/Users/mac/Documents/Roblox"` dengan `execution_mode=worktree`, sedangkan direktori itu bukan git repository dan tidak punya commit untuk di-branch. **Issue ini sendiri kena dua kali** (13:45:23Z dan 13:46:57Z) sebelum run yang menulis dokumen ini berhasil — jadi hambatannya bukan milik satu issue, melainkan milik konfigurasi project resource.
 
 **Opsi:**
 - **(a) Arahkan project resource ke repo `jettapindika/triangulate`.** Satu perubahan konfigurasi; ketujuh issue langsung bisa jalan; `main` sudah berisi 123 berkas termasuk `src/`, `tests/`, `tools/`.
