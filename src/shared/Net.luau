@@ -53,6 +53,7 @@ local REMOTE_NAMES: { string } = {
 	"RequestHint",
 	"ConfirmAccusation",
 	"PlacePiece",
+	"Inspect",
 }
 
 -- Remote yang arahnya server -> client.
@@ -80,6 +81,10 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	RequestHint = true,
 	ConfirmAccusation = true,
 	PlacePiece = true,
+	-- PRD §6: mini-aksi Searcher (senter UV, buka laci, lockpick). Client
+	-- melaporkan "saya mulai/selesai/batal memeriksa objek X", server yang
+	-- memutuskan apakah itu sah dan kunci apa yang diberikan.
+	Inspect = true,
 }
 
 -- Field yang boleh dilihat tiap role, per jenis payload.
@@ -132,10 +137,15 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 	},
 
 	-- PRD §7: Report Card = foto objek + tag lokasi otomatis.
+	--
+	-- `title` adalah label objek dari data kasus. Ia BUKAN rahasia -- Searcher
+	-- memang melihat objeknya, dan Director perlu namanya di clue board. Yang
+	-- tetap Handler-only adalah `gives_key`: kunci adalah hasil pemeriksaan,
+	-- bukan bagian dari laporan.
 	report_card = {
-		Searcher = { "id", "object_id", "location", "image" },
-		Handler = { "id", "object_id", "location", "image", "gives_key" },
-		Director = { "id", "object_id", "location", "image" },
+		Searcher = { "id", "object_id", "title", "location", "image" },
+		Handler = { "id", "object_id", "title", "location", "image", "gives_key" },
+		Director = { "id", "object_id", "title", "location", "image" },
 	},
 
 	-- PRD §5: feedback salah hanya "X dari 3 benar", tanpa menyebut field mana.

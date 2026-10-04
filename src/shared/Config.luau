@@ -63,4 +63,30 @@ Config.SEPARATE_RANK_FOR_NPC_DIRECTOR = true
 Config.TABLE_WIDTH = 16
 Config.TABLE_HEIGHT = 16
 
+-- PRD §6: "mini-aksi (senter UV, buka laci dengan hold, lockpick sederhana)".
+--
+-- `hold_seconds` adalah durasi tahan yang DIVERIFIKASI SERVER. Client boleh
+-- menampilkan progress bar sendiri, tetapi angka yang menentukan diterima atau
+-- tidaknya sebuah pemeriksaan ada di sini dan dihitung dari jam server
+-- (`LocationService`), bukan dari apa yang dilaporkan client.
+--
+-- ASUMSI: 1,2 dan 2,5 detik dipilih supaya lockpick terasa lebih berat daripada
+-- membuka laci. Belum diukur di perangkat; tuning minggu 7 (PRD §17).
+Config.SEARCHER_ACTIONS = {
+	{ id = "uv", label = "Senter UV", hold_seconds = 0 },
+	{ id = "drawer", label = "Buka laci", hold_seconds = 1.2 },
+	{ id = "lockpick", label = "Lockpick", hold_seconds = 2.5 },
+}
+
+-- PRD §6: objek ambient ditempatkan pada cincin dalam, objek rantai pada cincin
+-- luar, supaya keduanya tidak bertumpuk di satu titik dan Searcher bisa
+-- membedakan "benda rantai" dari "benda ruangan" tanpa UI tambahan.
+--
+-- ASUMSI: 40 stud cukup lapang untuk satu ruang galeri pada kecepatan jalan
+-- default. Angka ini presentasi, bukan aturan permainan -- `LocationService`
+-- hanya memakainya untuk menurunkan posisi deterministik, dan tidak ada
+-- keputusan permainan yang bergantung padanya.
+Config.LOCATION_RADIUS = 40
+Config.AMBIENT_RADIUS = 12
+
 return Config

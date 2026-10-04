@@ -101,9 +101,9 @@ penuh di dalam commit integrasi:
 | Berkas | Yang diubah |
 |---|---|
 | `src/server/ClueGraph.luau` | `NodeType` + himpunan `VALID_TYPES` |
-| `src/server/CaseLoader.luau` | himpunan `VALID_KINDS` |
+| `src/server/CaseSource.luau` | himpunan `VALID_KINDS` |
 | `tests/clue-graph.spec.luau` | 8 literal |
-| `tests/case-loader.spec.luau` | 7 literal |
+| `tests/case-source.spec.luau` | 7 literal |
 | `data/cases/gallery_01.json` | 7 node |
 | `data/cases/README.md` | daftar jenis node |
 
@@ -235,6 +235,17 @@ Keluaran `lune run tests/run.luau` (ekor):
 SEMUA LULUS
 ```
 
+> **Catatan (ditambahkan minggu 2, EXTA-55).** Blok di atas adalah keluaran
+> apa adanya saat integrasi EXTA-54. Dua nama suite di dalamnya sudah tidak ada:
+> `CaseLoader: pemilihan varian` dan `CaseLoader: seam validator EXTA-33` kini
+> bernama `CaseSource: ...`, karena berkas server itu di-`git mv` menjadi
+> `CaseSource.luau` dan `pickVariant` dihapus (lihat §7 utang #1 dan
+> `docs/mvp-notes.md` §4). Jumlah 358 juga angka saat itu; pohon sekarang
+> melaporkan **628 assertion**. Daftar modul murni di §6 juga tumbuh dari 13 ke
+> **17** berkas (`PuzzleTable`, `CaseLoader`, `PuzzleTableService`, dan
+> `LocationService` ikut masuk). Angka lain di dokumen ini tetap catatan
+> historis dan tidak diperbarui.
+
 Keluaran `selene src tests tools`:
 
 ```
@@ -298,8 +309,8 @@ menghasilkan keluaran yang sama sebelum dan sesudah.
 
 | # | Utang | Risiko | Kapan |
 |---|---|---|---|
-| 1 | **Dua `CaseLoader` koeksis** | `src/shared/case/CaseLoader.luau` (murni, dipakai CLI + `projectForRole`) dan `src/server/CaseLoader.luau` (menyentuh `Instance`, dipakai server) punya nama sama dan tanggung jawab yang tumpang tindih. Pembaca baru bisa salah `require`, dan logika pemilihan varian hidup di dua tempat (`selectVariant` vs `pickVariant`). | Sebelum minggu 2, saat loader dipanggil dari loop permainan |
-| 2 | `luau-lsp` + `sourcemap.json` belum ada | `init.server.luau`, `init.client.luau`, `NetClient`, `Hud/*` tidak bisa diperiksa tipe oleh `luau-analyze` mandiri (tidak punya definisi API Roblox). 14 modul murni sudah bersih di bawah `--mode=strict` (13 di `README.md` + `src/shared/case/CaseLoader.luau`). | EXTA-34 |
+| 1 | ~~**Dua `CaseLoader` koeksis**~~ **SELESAI (EXTA-55)** | Diselesaikan dengan `git mv src/server/CaseLoader.luau src/server/CaseSource.luau`; `pickVariant`/`pickVariantIndex` dihapus, sehingga varian dipilih hanya di `CaseLoader.load(case, seed)`. Uji ikut berganti nama (`tests/case-source.spec.luau`). Rincian di `docs/mvp-notes.md` §4. | Selesai minggu 2 |
+| 2 | `luau-lsp` + `sourcemap.json` belum ada | `init.server.luau`, `init.client.luau`, `NetClient`, `Hud/*`, `Location/*` tidak bisa diperiksa tipe oleh `luau-analyze` mandiri (tidak punya definisi API Roblox). 15 modul murni sudah bersih di bawah `--mode=strict` (13 di `README.md` + `src/shared/case/CaseLoader.luau` + `src/server/LocationService.luau`). | EXTA-34 |
 | 3 | Tidak ada rate limiting remote | Client bisa spam `Report`/`SubmitDeduction` | Sebelum rilis |
 | 4 | Belum ada CI | Tidak ada yang menjalankan suite ini otomatis. `tools/validate_case.luau` sudah `exit 1` saat gagal, jadi ia siap jadi gate. | EXTA-34 |
 | 5 | Telemetri dihitung tapi tidak dikirim | PRD §12 tidak bisa diukur | EXTA-34 |

@@ -1,28 +1,34 @@
 --!strict
--- Loader kasus (PRD §10, §15).
+-- Sumber data kasus dari ServerStorage (PRD §10, §15).
 --
 -- PRD §10: "Semua kasus berupa data (puzzle, clue, graf, briefing per role,
 -- solusi). Menambah kasus tidak menyentuh kode."
 --
--- Modul ini adalah sisi server dari aturan itu: satu-satunya tempat kode
--- menyentuh data kasus. Data hidup di `ServerStorage.Cases`, yang tidak pernah
--- direplikasi ke client (PRD §15, dan lihat `shared/Net.luau` untuk argumen
--- lengkapnya).
+-- Pembagian tanggung jawab, dan kenapa dua modul:
+--   * berkas ini -- sisi Roblox saja: menemukan ModuleScript di
+--     `ServerStorage.Cases`, membacanya, dan menolak data yang bentuknya jelas
+--     rusak sebelum ada sesi. Ia menyentuh `Instance`, jadi tidak bisa diuji
+--     dari CLI.
+--   * `src/shared/case/CaseLoader.luau` -- sisi murni: validasi penuh lewat
+--     `CaseValidator`, pemilihan varian dari seed, proyeksi per role. Itu
+--     satu-satunya tempat varian dipilih.
 --
 -- SEAM EXTA-33: skema JSON lengkap dan validator graf adalah deliverable
--- EXTA-33. Di sini hanya ada kontrak pemanggilan yang mereka isi:
+-- EXTA-33. Kontrak pemanggilan yang mereka isi:
 --
---   CaseLoader.setValidator(fn) -- fn(caseTable) -> (ok, daftarMasalah)
+--   CaseSource.setValidator(fn) -- fn(caseTable) -> (ok, daftarMasalah)
 --
--- Selama validator belum dipasang, loader tetap memeriksa bentuk minimum
+-- Selama validator belum dipasang, berkas ini tetap memeriksa bentuk minimum
 -- supaya kesalahan data ketahuan saat start, bukan saat sesi berjalan.
 
-local CaseLoader = {}
+local CaseSource = {}
 
 export type CaseVariant = {
+	variant_id: string,
 	culprit: string,
 	motive: string,
-	method: string,
+	method: string?,
+	label: string?,
 }
 
 export type CaseNode = {
@@ -32,19 +38,41 @@ export type CaseNode = {
 	-- menghindari kata kunci tetap bisa memuat datanya.
 	kind: string?,
 	type: string?,
-	needs: { string }?,
-	unlocks: { string }?,
+	label: string?,
+	-- Node yang hanya hidup pada cabang tertentu (PRD §10 "varian solusi").
+	variants: { string }?,
 	gives_key: string?,
-	yields: string?,
 	puzzle: string?,
+	needs: { string }?,
+	yields: string?,
+	source: string?,
+	unlocks: { string }?,
+	supports: { string }?,
+}
+
+export type CaseStatement = {
+	who: string,
+	text: string?,
+	lie: boolean?,
+	contradicted_by: string?,
+	variants: { string }?,
 }
 
 export type Case = {
 	case_id: string,
+	title: string?,
+	case_type: string?,
+	key_deductions: number?,
 	location: string?,
+	suspects: { string }?,
+	motives: { string }?,
+	methods: { string }?,
 	variants: { CaseVariant },
 	nodes: { CaseNode },
-	statements: { [string]: any }?,
+	statements: { CaseStatement }?,
+	briefing: { [string]: string }?,
+	briefings: { [string]: any }?,
+	solution: { [string]: any }?,
 }
 
 export type Validator = (case: any) -> (boolean, { string })
@@ -54,7 +82,7 @@ local cache: { [string]: Case } = {}
 
 -- Memasang validator skema (diisi EXTA-33). Mengembalikan validator sebelumnya,
 -- supaya pemanggil bisa memulihkannya pada uji.
-function CaseLoader.setValidator(next: Validator?): Validator?
+function CaseSource.setValidator(next: Validator?): Validator?
 	local previous = validator
 	validator = next
 	cache = {}
@@ -73,7 +101,7 @@ local VALID_KINDS: { [string]: boolean } = {
 
 -- Pemeriksaan bentuk minimum. Bukan pengganti validator EXTA-33: ini hanya
 -- menangkap data yang jelas rusak agar tidak sampai ke sesi.
-function CaseLoader.shapeProblems(data: any): { string }
+function CaseSource.shapeProblems(data: any): { string }
 	local problems: { string } = {}
 
 	if type(data) ~= "table" then
@@ -92,6 +120,7 @@ function CaseLoader.shapeProblems(data: any): { string }
 	end
 
 	local ids: { [string]: boolean } = {}
+	local keys: { [string]: boolean } = {}
 	for index, node in data.nodes do
 		local where = string.format("nodes[%d]", index)
 		if type(node) ~= "table" then
@@ -106,6 +135,9 @@ function CaseLoader.shapeProblems(data: any): { string }
 			table.insert(problems, string.format("id node duplikat: %s", node.id))
 		end
 		ids[node.id] = true
+		if type(node.gives_key) == "string" then
+			keys[node.gives_key] = true
+		end
 
 		-- PRD §10 memakai kunci `type` untuk jenis node. `type` sah sebagai
 		-- nama field di Luau; lihat `docs/arsitektur.md`.
@@ -118,17 +150,40 @@ function CaseLoader.shapeProblems(data: any): { string }
 		end
 	end
 
-	-- Setiap prasyarat harus menunjuk node yang benar-benar ada (PRD §10:
-	-- validator memastikan tidak ada rantai buntu).
+	--[[
+		Setiap prasyarat harus menunjuk sesuatu yang benar-benar ada.
+
+		`needs` bermakna berbeda menurut jenis node (PRD §4):
+		  * pada `evidence`, `needs` menunjuk KUNCI yang diberikan objek
+		    (`gives_key`), bukan node -- bukti dibuka oleh kunci, bukan oleh
+		    node lain;
+		  * pada `deduction`, `needs` menunjuk id node (Clue Card) yang
+		    digabungkan.
+
+		Menyamakan keduanya akan menolak kasus yang sah, jadi pemisahan ini
+		bukan detail: tanpa itu `gallery_01` sendiri ditolak.
+	]]
 	for _, node in data.nodes do
-		if type(node) == "table" and type(node.needs) == "table" then
-			for _, need in node.needs do
-				if not ids[need] then
-					table.insert(
-						problems,
-						string.format("%s membutuhkan '%s' yang tidak ada", node.id, tostring(need))
+		if type(node) ~= "table" or type(node.needs) ~= "table" then
+			continue
+		end
+		local kind = node.kind
+		if kind == nil then
+			kind = node.type
+		end
+		local pool = if kind == "evidence" then keys else ids
+		local label = if kind == "evidence" then "kunci" else "node"
+		for _, need in node.needs do
+			if not pool[need] then
+				table.insert(
+					problems,
+					string.format(
+						"%s membutuhkan %s '%s' yang tidak ada",
+						tostring(node.id),
+						label,
+						tostring(need)
 					)
-				end
+				)
 			end
 		end
 	end
@@ -138,7 +193,7 @@ end
 
 -- Memuat satu kasus. Melempar error bila kasus tidak ada atau rusak: kasus
 -- rusak harus menghentikan start, bukan muncul sebagai sesi setengah jalan.
-function CaseLoader.load(casesFolder: Instance, caseId: string): Case
+function CaseSource.load(casesFolder: Instance, caseId: string): Case
 	local cached = cache[caseId]
 	if cached ~= nil then
 		return cached
@@ -151,7 +206,7 @@ function CaseLoader.load(casesFolder: Instance, caseId: string): Case
 
 	local data = require(module)
 
-	local problems = CaseLoader.shapeProblems(data)
+	local problems = CaseSource.shapeProblems(data)
 	if #problems > 0 then
 		error(string.format("kasus '%s' rusak: %s", caseId, table.concat(problems, "; ")))
 	end
@@ -174,7 +229,7 @@ function CaseLoader.load(casesFolder: Instance, caseId: string): Case
 end
 
 -- Semua kasus yang tersedia, terurut supaya pemilihan kasus deterministik.
-function CaseLoader.availableCaseIds(casesFolder: Instance): { string }
+function CaseSource.availableCaseIds(casesFolder: Instance): { string }
 	local ids: { string } = {}
 	for _, child in casesFolder:GetChildren() do
 		if child:IsA("ModuleScript") then
@@ -185,45 +240,9 @@ function CaseLoader.availableCaseIds(casesFolder: Instance): { string }
 	return ids
 end
 
--- PRD §10: "Seed server memilih cabang saat sesi dibuat." Pemilihan cabang
--- harus deterministik dari seed agar dua server dengan seed sama menghasilkan
--- kasus yang sama, dan hasilnya TIDAK pernah dikirim ke client.
---
--- `roll` adalah angka di [0, 1); pemanggil menghasilkannya dari seed sesi.
--- Memisahkan `roll` dari pembangkit acak membuat fungsi ini murni dan bisa
--- diuji dari CLI.
-function CaseLoader.pickVariant(case: Case, roll: number): CaseVariant
-	return case.variants[CaseLoader.pickVariantIndex(case, roll)]
-end
-
---[[
-	Indeks varian yang dipilih `pickVariant` untuk `roll` yang sama.
-
-	Kenapa terpisah: `CaseVariant` hanya membawa `culprit`/`motive`/`method`,
-	tanpa `variant_id`, sedangkan penyaring node ber-`variants` membutuhkan id
-	itu. Pemanggil memakai `roll` yang SAMA untuk kedua fungsi, jadi keduanya
-	selalu menunjuk varian yang sama -- satu rumus, bukan dua salinan yang bisa
-	menyimpang.
-]]
-function CaseLoader.pickVariantIndex(case: Case, roll: number): number
-	local count = #case.variants
-	if count == 0 then
-		error(string.format("kasus '%s' tidak punya variants", case.case_id))
-	end
-
-	local normalized = roll
-	if normalized < 0 then
-		normalized = 0
-	elseif normalized >= 1 then
-		normalized = 0.999999
-	end
-
-	return math.floor(normalized * count) + 1
-end
-
 -- Membersihkan cache. Dipakai uji dan saat kasus dimuat ulang.
-function CaseLoader.clearCache(): ()
+function CaseSource.clearCache(): ()
 	cache = {}
 end
 
-return CaseLoader
+return CaseSource

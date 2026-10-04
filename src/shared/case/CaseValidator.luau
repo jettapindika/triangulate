@@ -829,7 +829,7 @@ function CaseValidator.formatReport(report: Report): string
 end
 
 --[[
-	Adapter untuk seam `CaseLoader.setValidator` di `src/server/CaseLoader.luau`.
+	Adapter untuk seam `CaseSource.setValidator` di `src/server/CaseSource.luau`.
 
 	EXTA-32 mendeklarasikan kontrak `fn(caseTable) -> (ok, daftarMasalah)` dan
 	menyisakan pengisinya untuk EXTA-33. EXTA-33 menyediakan `validate`, yang

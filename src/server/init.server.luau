@@ -18,15 +18,19 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 local Roles = require(Shared.Roles)
 local CaseValidator = require(Shared.case.CaseValidator)
+local SharedCaseLoader = require(Shared.case.CaseLoader)
 local PuzzleTable = require(Shared.PuzzleTable)
 
-local CaseLoader = require(script.CaseLoader)
+local CaseSource = require(script.CaseSource)
+local LocationService = require(script.LocationService)
 local DeductionEngine = require(script.DeductionEngine)
 local AccusationService = require(script.AccusationService)
 local RoleAssignment = require(script.RoleAssignment)
@@ -56,7 +60,16 @@ end
 -- Sebelum ini seam `setValidator` dibiarkan kosong karena validatornya belum
 -- ada. Sekarang ada, dan dipasang di sini: kasus yang gagal skema atau graf
 -- menghentikan start, bukan menghasilkan sesi setengah jalan.
-CaseLoader.setValidator(CaseValidator.asLoaderValidator)
+--
+-- Ada DUA jalur validasi, dan keduanya harus terpasang:
+--   * `CaseSource.setValidator` -- saat data dibaca dari `ServerStorage`,
+--     sebelum ada sesi. Ini yang menangkap kasus cacat paling awal.
+--   * `SharedCaseLoader.load` -- memanggil `CaseValidator` sendiri, dan
+--     mengembalikan `ok = false` alih-alih melempar. Ini yang dipakai
+--     `startSession` karena sekaligus memilih varian.
+-- Keduanya menjalankan validator yang sama (`CaseValidator.asLoaderValidator`
+-- adalah pembungkus `CaseValidator.validate`), jadi tidak ada dua aturan.
+CaseSource.setValidator(CaseValidator.asLoaderValidator)
 
 -- ---------------------------------------------------------------------------
 -- 2. RemoteEvent dari satu sumber kebenaran
@@ -101,12 +114,19 @@ end
 
 type Session = {
 	caseId: string,
-	case: CaseLoader.Case,
-	variant: CaseLoader.CaseVariant,
-	-- Id varian yang dipilih. `CaseVariant` tidak membawa `variant_id` (lihat
-	-- `CaseLoader.pickVariant`), jadi id-nya disimpan terpisah di sini: node
-	-- ber-`variants` disaring terhadap nilai ini.
-	variantId: string?,
+	case: CaseSource.Case,
+	variant: CaseSource.CaseVariant,
+	-- Id varian yang dipilih. `CaseVariant` dari `CaseSource` sudah membawa
+	-- `variant_id`, tetapi `SharedCaseLoader.load` juga mengembalikannya di
+	-- `session.variant_id`; yang disimpan di sini adalah nilai dari loader murni,
+	-- karena itulah yang dipakai untuk menyaring node.
+	variantId: string,
+	-- Lokasi sesi ini (PRD §4, §6, §17 minggu 2): objek yang bisa diperiksa,
+	-- mini-aksi Searcher, dan kunci yang sudah dipegang tim.
+	location: LocationService.Service,
+	-- Part dunia yang sudah dibuat, di-key oleh id objek. Dipakai saat sesi
+	-- dibersihkan; tidak dibaca oleh logika permainan.
+	world: { [string]: BasePart },
 	roles: { [number]: string },
 	-- PRD §8: "Jika belum 3 manusia, role kosong diisi NPC." `roles` di atas
 	-- di-key oleh `UserId`, dan NPC tidak punya UserId -- jadi role yang tidak
@@ -120,6 +140,9 @@ type Session = {
 	-- Meja puzzle sesi ini (PRD §4, §15, §17 minggu 1). Dibangun sekali saat
 	-- sesi mulai dari node bukti yang aktif pada varian yang dipilih.
 	puzzle: PuzzleTableService.Service,
+	-- Node id meja terakhir yang dikirim ke pemain. Dipakai supaya meja yang
+	-- sama tidak dikirim berulang kali saat kunci baru diperoleh.
+	sentPuzzle: string?,
 	accusation: AccusationService.Session,
 	telemetry: TelemetryService.Session,
 	startedAt: number,
@@ -162,6 +185,129 @@ local function fireToRole(remoteName: string, view: string, payload: { [string]:
 	end
 end
 
+-- Mengirim meja puzzle yang sedang TERSEDIA ke Handler dan Director.
+--
+-- Dua kata yang mudah tertukar dan di sini dibedakan dengan sengaja:
+--   * "belum selesai" (`firstUnsolved`) -- masih ada pekerjaan tersisa;
+--   * "tersedia" (`firstAvailable`) -- pekerjaan itu sudah terbuka kuncinya.
+-- Yang dikirim ke pemain adalah yang kedua. Mengirim meja yang masih terkunci
+-- akan menampilkan papan yang tidak bisa dimajukan, dan Handler akan menyangka
+-- dirinya gagal.
+--
+-- Pengiriman ulang dicegah lewat `sentPuzzle`: meja yang sama tidak dikirim dua
+-- kali hanya karena ada kunci lain yang diperoleh. Tanpa penanda ini, Handler
+-- yang sedang menyeret potongan bisa menerima papan yang sama di tengah
+-- tarikan.
+local function sendAvailablePuzzle(current: Session): ()
+	local entry = PuzzleTableService.firstAvailable(
+		current.puzzle,
+		LocationService.keysHeld(current.location)
+	)
+	if entry == nil then
+		return
+	end
+	if current.sentPuzzle == entry.node_id then
+		return
+	end
+
+	current.sentPuzzle = entry.node_id
+	fireToRole("PuzzleState", "puzzle_state", PuzzleTable.clientPayload(entry.state))
+end
+
+-- ---------------------------------------------------------------------------
+-- 4b. Dunia: lokasi fisik sesi ini (PRD §4, §6)
+-- ---------------------------------------------------------------------------
+
+-- Nama tag `CollectionService`. Client mencarinya lewat tag, bukan lewat nama
+-- atau path -- path part bisa berubah tanpa merusak client, dan tag tidak bisa
+-- salah cocok dengan part lain di place.
+local OBJECT_TAG = "TriangulateObject"
+local WORLD_FOLDER = "TriangulateLocation"
+
+--[[
+	Membuat part untuk tiap objek lokasi dan mengembalikan petanya.
+
+	Aturan yang dipegang di sini: part yang direplikasi TIDAK boleh membawa
+	rahasia. Dokumentasi arsitektur (`docs/arsitektur.md`) menyebut atribut
+	Instance sebagai kanal replikasi, bukan kanal rahasia -- siapa pun yang
+	menjalankan client bisa membacanya. Karena itu:
+
+	  * tidak ada `gives_key` di atribut mana pun. Kunci adalah hasil
+	    pemeriksaan, dan pemeriksaannya diputuskan server.
+	  * tidak ada field solusi, tidak ada resep deduksi, tidak ada isi bukti.
+	  * `label` boleh: Searcher memang melihat objeknya, dan label itu juga
+	    muncul di Report Card miliknya sendiri.
+
+	Posisi part berasal dari `LocationService.ringPosition` -- deterministik,
+	tanpa angka acak, supaya dua sesi dengan varian yang sama menaruh objek di
+	tempat yang sama.
+]]
+local function buildWorld(service: LocationService.Service): { [string]: BasePart }
+	local existing = Workspace:FindFirstChild(WORLD_FOLDER)
+	if existing ~= nil then
+		existing:Destroy()
+	end
+
+	local folder = Instance.new("Folder")
+	folder.Name = WORLD_FOLDER
+
+	local parts: { [string]: BasePart } = {}
+
+	local function makePart(object: LocationService.WorldObject, color: Color3): BasePart
+		local part = Instance.new("Part")
+		part.Name = object.id
+		part.Anchored = true
+		part.CanCollide = false
+		part.Size = Vector3.new(2, 2, 2)
+		part.Position = Vector3.new(object.position.x, 1.5, object.position.z)
+		part.Color = color
+		-- Hanya identitas dan label. Sengaja BUKAN `gives_key`.
+		part:SetAttribute("object_id", object.id)
+		part:SetAttribute("label", object.label)
+		part:SetAttribute("kind", object.kind)
+		part:SetAttribute("reachable", object.reachable)
+		-- Gerbang deduksi (PRD §4 langkah 6). Sama seperti `reachable`, ini
+		-- bukan rahasia: Searcher memang melihat pintu yang belum bisa dibuka.
+		-- Yang tidak boleh menyeberang adalah resepnya (`unlocks` menunjuk id
+		-- objek, bukan sebaliknya) dan kuncinya.
+		--
+		-- Atribut ini BERUBAH selama sesi (lihat `handleDeduce`), dan itulah
+		-- cara client tahu kapan sebuah pintu terbuka tanpa menebak sendiri.
+		part:SetAttribute("gated", object.gated_by ~= nil)
+		part:SetAttribute("action", object.action)
+		CollectionService:AddTag(part, OBJECT_TAG)
+		part.Parent = folder
+		parts[object.id] = part
+		return part
+	end
+
+	for _, nodeId in service.order do
+		local object = service.objects[nodeId]
+		if object ~= nil then
+			makePart(object, Color3.fromRGB(226, 196, 132))
+		end
+	end
+
+	for _, nodeId in service.ambient do
+		local object = service.objects[nodeId]
+		if object ~= nil then
+			makePart(object, Color3.fromRGB(150, 150, 165))
+		end
+	end
+
+	-- Objek yang ada di lokasi tapi belum tercapai tetap dibuat, dengan warna
+	-- berbeda dan `reachable = false`: Searcher boleh melihat pintu yang belum
+	-- bisa dibuka, tapi server menolak memeriksanya.
+	for nodeId, object in service.objects do
+		if parts[nodeId] == nil then
+			makePart(object, Color3.fromRGB(96, 96, 108))
+		end
+	end
+
+	folder.Parent = Workspace
+	return parts
+end
+
 -- ---------------------------------------------------------------------------
 -- 5. Mulai sesi
 -- ---------------------------------------------------------------------------
@@ -177,32 +323,49 @@ local function startSession(): ()
 		return
 	end
 
-	local caseIds = CaseLoader.availableCaseIds(casesFolder)
+	local caseIds = CaseSource.availableCaseIds(casesFolder)
 	if #caseIds == 0 then
 		warn("[Triangulate] tidak ada kasus di ServerStorage.Cases; sesi tidak bisa dimulai.")
 		return
 	end
 
 	local caseId = caseIds[1]
-	local loaded = CaseLoader.load(casesFolder, caseId)
+	local loaded = CaseSource.load(casesFolder, caseId)
 
 	-- PRD §10: "Seed server memilih cabang saat sesi dibuat."
-	-- Pemilihan ini terjadi di server dan hasilnya tidak pernah dikirim ke client.
-	local rng = Random.new(os.time())
-	local roll = rng:NextNumber()
-	local variant = CaseLoader.pickVariant(loaded, roll)
-	-- `CaseVariant` tidak membawa `variant_id`, jadi indeksnya diambil dari
-	-- fungsi yang sama dengan `roll` yang sama. Node bukti ber-`variants`
-	-- (mis. `ev_ledger`) disaring terhadap id ini -- membiarkannya hidup akan
-	-- mengirim bukti milik cabang lain ke client.
-	local variantId: string? = nil
-	local rawVariants = (loaded :: any).variants
-	if type(rawVariants) == "table" then
-		local chosen = rawVariants[CaseLoader.pickVariantIndex(loaded, roll)]
-		if type(chosen) == "table" and type(chosen.variant_id) == "string" then
-			variantId = chosen.variant_id
+	-- Pemilihan varian ada di SATU tempat: `SharedCaseLoader.load`, yang
+	-- memvalidasi dulu lalu memilih varian dari seed. Server ini tidak lagi
+	-- memilih varian sendiri -- dulu ada dua jalur (`CaseLoader.pickVariant`
+	-- di sini dan fungsi sejenis di modul loader), dan dua jalur berarti dua
+	-- jawaban yang bisa berbeda.
+	--
+	-- `load.ok == false` berarti kasus cacat. Sesi TIDAK dijalankan: PRD §10
+	-- menuntut validator memastikan jalur solusi ada, dan menjalankan kasus
+	-- yang gagal validasi berarti menjalankan kasus yang mungkin tidak bisa
+	-- dimenangkan.
+	local load = SharedCaseLoader.load(loaded, tostring(os.time()))
+	if not load.ok then
+		local codes: { string } = {}
+		for _, problem in load.report.errors do
+			table.insert(codes, string.format("%s (%s)", problem.code, problem.path))
 		end
+		warn(
+			string.format(
+				"[Triangulate] kasus '%s' ditolak validator; sesi tidak dijalankan: %s",
+				caseId,
+				table.concat(codes, ", ")
+			)
+		)
+		return
 	end
+
+	local variantId: string = load.session.variant_id
+	local variant = load.session.variant
+
+	-- RNG tetap dipakai untuk scatter potongan puzzle. Ia TIDAK lagi dipakai
+	-- untuk memilih varian -- kalau dipakai untuk keduanya, menarik angka
+	-- untuk scatter akan menggeser varian sesi.
+	local rng = Random.new(os.time())
 
 	local players = Players:GetPlayers()
 	local refs: { RoleAssignment.PlayerRef } = {}
@@ -298,16 +461,55 @@ local function startSession(): ()
 		method = variant.method,
 	}
 
+	-- Lokasi sesi ini (PRD §4, §6, §17 minggu 2).
+	--
+	-- Himpunan objek yang bisa diperiksa datang dari `reachable_node_ids`
+	-- milik loader, bukan dari penelusuran sendiri: itulah satu-satunya tempat
+	-- yang tahu node mana yang masih terjangkau pada varian ini (PRD §10 --
+	-- "tidak ada rantai yang buntu"). Menghitung ulang di sini berarti dua
+	-- jawaban yang bisa berbeda.
+	--
+	-- `reachableIds` saja belum cukup: `LocationService` juga membaca `unlocks`
+	-- dari node dan menahan objek yang dibuka sebuah deduksi sampai deduksi itu
+	-- selesai (PRD §4 langkah 6). Ia membaca `nodes` yang sama, jadi tidak ada
+	-- salinan kedua dari aturan itu di sini.
+	local reachableIds: { [string]: boolean } = {}
+	for _, nodeId in load.session.reachable_node_ids do
+		reachableIds[nodeId] = true
+	end
+
+	-- Deduksi selesai: satu tabel untuk sesi dan lokasi. Dua tabel berarti
+	-- gerbang `unlocks` membaca keadaan yang berbeda dari yang ditulis
+	-- `handleDeduce`, dan objek yang sudah terbuka tetap terlihat terkunci.
+	local completedDeductions: { [string]: boolean } = {}
+
+	local locationService = LocationService.new({
+		location = loaded.location,
+		nodes = loaded.nodes,
+		reachableIds = reachableIds,
+		actions = Config.SEARCHER_ACTIONS,
+		clock = os.clock,
+		variantId = variantId,
+		completedDeductions = completedDeductions,
+		radius = Config.LOCATION_RADIUS,
+		ambientRadius = Config.AMBIENT_RADIUS,
+	})
+
+	local world = buildWorld(locationService)
+
 	session = {
 		caseId = caseId,
 		case = loaded,
 		variant = variant,
 		variantId = variantId,
+		location = locationService,
+		world = world,
 		roles = assigned,
 		npcRoles = npcRoles,
 		engine = engine,
-		completedDeductions = {},
+		completedDeductions = completedDeductions,
 		puzzle = PuzzleTableService.new(PuzzleTable),
+		sentPuzzle = nil,
 		accusation = AccusationService.newSession(
 			solution,
 			Config.ACCUSATION_FIELDS,
@@ -323,7 +525,7 @@ local function startSession(): ()
 	-- menjatuhkan sesi tiga pemain. Yang dilewati dicatat supaya ketahuan.
 	local puzzleEntries, puzzleSkipped = PuzzleTableService.build(
 		session.puzzle,
-		(loaded :: any).nodes,
+		loaded.nodes,
 		variantId,
 		Config.TABLE_WIDTH,
 		Config.TABLE_HEIGHT,
@@ -346,7 +548,7 @@ local function startSession(): ()
 	-- Briefing per role. PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu
 	-- apa / Tugas pertamamu". Tiap role menerima proyeksi berbeda, dan tidak
 	-- ada role yang menerima field solusi.
-	local briefings = (loaded :: any).briefings
+	local briefings = loaded.briefings
 	if type(briefings) == "table" then
 		for userId, role in assigned do
 			local player = Players:GetPlayerByUserId(userId)
@@ -362,21 +564,32 @@ local function startSession(): ()
 
 	-- PRD §5: ruang pilihan form tuduhan. Ini kandidat, bukan jawaban.
 	local options = {
-		suspects = (loaded :: any).suspects,
-		motives = (loaded :: any).motives,
-		methods = (loaded :: any).methods,
+		suspects = loaded.suspects,
+		motives = loaded.motives,
+		methods = loaded.methods,
 	}
 	fireToRole("SessionState", "accusation_options", options)
 
-	-- Meja pertama yang belum selesai dikirim ke Handler dan Director. Searcher
-	-- tidak menerimanya: `Net.CLIENT_VIEWS.puzzle_state` sengaja tidak punya
-	-- entri untuknya -- ia ada di lokasi, bukan di meja (PRD §3), dan
-	-- `fireToRole` melewati role yang view-nya `nil`.
-	local first = PuzzleTableService.firstUnsolved(session.puzzle)
-	if first ~= nil then
-		fireToRole("PuzzleState", "puzzle_state", PuzzleTable.clientPayload(first.state))
-	else
-		warn(string.format("[Triangulate] kasus '%s' tidak punya meja puzzle aktif", caseId))
+	-- Meja pertama yang TERSEDIA (bukan sekadar belum selesai) dikirim ke
+	-- Handler dan Director. Bedanya nyata: meja yang belum dibuka kuncinya
+	-- tidak boleh muncul sebagai pekerjaan. Searcher tidak menerimanya:
+	-- `Net.CLIENT_VIEWS.puzzle_state` sengaja tidak punya entri untuknya --
+	-- ia ada di lokasi, bukan di meja (PRD §3), dan `fireToRole` melewati role
+	-- yang view-nya `nil`.
+	sendAvailablePuzzle(session)
+	if session.sentPuzzle == nil then
+		if PuzzleTableService.firstUnsolved(session.puzzle) ~= nil then
+			-- Ada meja, tapi semuanya masih terkunci. Ini keadaan sah: Searcher
+			-- belum menemukan objek pertama. Bukan peringatan.
+			print(
+				string.format(
+					"[Triangulate] kasus '%s': semua meja menunggu kunci; Handler menunggu Searcher",
+					caseId
+				)
+			)
+		else
+			warn(string.format("[Triangulate] kasus '%s' tidak punya meja puzzle aktif", caseId))
+		end
 	end
 end
 
@@ -415,12 +628,36 @@ local function handleDeduce(player: Player, clueIds: any): ()
 
 	local result = DeductionEngine.combine(current.engine, ids, current.completedDeductions)
 	if result.ok and result.deductionId ~= nil then
-		current.completedDeductions[result.deductionId] = true
+		-- PRD §4 langkah 6: deduksi "membuka target baru". Pencatatannya lewat
+		-- `LocationService` supaya satu tempat memutuskan objek mana yang
+		-- terbuka -- `completedDeductions` adalah tabel yang sama.
+		local opened = LocationService.completeDeduction(current.location, result.deductionId)
+		for _, objectId in opened do
+			-- Part-nya sudah ada sejak sesi mulai (Searcher melihat pintu yang
+			-- belum bisa dibuka); yang berubah hanya gerbangnya. Client
+			-- mendengarkan perubahan atribut ini dan mengaktifkan promptnya.
+			local part = current.world[objectId]
+			if part ~= nil then
+				part:SetAttribute("gated", false)
+			end
+			print(
+				string.format(
+					"[Triangulate] deduksi '%s' membuka objek '%s'; Searcher bisa memeriksanya",
+					result.deductionId,
+					objectId
+				)
+			)
+		end
+
 		fireToRole("DeductionResult", "deduction", {
 			id = result.deductionId,
 			clue_ids = ids,
 			pinpoint = nil,
-			unlocks = nil,
+			-- PRD §4 langkah 6: deduksi "membuka target baru". Yang dikirim
+			-- adalah id objek yang BARU terbuka -- id itu sudah terlihat di
+			-- dunia sebagai nama part, jadi ini tidak menambah kebocoran; yang
+			-- tetap di server adalah resep `unlocks` itu sendiri.
+			unlocks = opened,
 		})
 	end
 end
@@ -500,6 +737,22 @@ local function handleConfirm(player: Player, _: any): ()
 	})
 end
 
+-- PRD §7: Report Card. Client mengirim ID objek; server memutuskan apa yang
+-- kembali.
+--
+-- Sebelum ini payload client diteruskan apa adanya ke `fireToRole`, dan itu
+-- berarti client bisa mengarang `gives_key`, mengarang `title`, atau mengirim
+-- objek yang tidak ada di kasus. Sekarang payload yang menyeberang DIRAKIT DI
+-- SINI dari data sesi: id objek divalidasi terhadap lokasi, judul diambil dari
+-- label objek, dan kunci diambil dari `LocationService` -- bukan dari client.
+--
+-- Pemeriksaan yang dilakukan, berurutan:
+--   1. role pemain dikenal,
+--   2. payload berupa tabel dan `object_id` bertipe string,
+--   3. objek ada di lokasi sesi ini,
+--   4. objek sudah bisa dicapai (belum tercapai = masih terkunci deduksi).
+-- `gives_key` tidak ikut diperiksa dari client: nilainya tidak pernah dibaca
+-- dari payload.
 local function handleReport(player: Player, payload: any): ()
 	local current = session
 	if current == nil then
@@ -507,7 +760,9 @@ local function handleReport(player: Player, payload: any): ()
 	end
 
 	local role = roleOf(player.UserId)
-	if role == nil then
+	if role ~= Roles.SEARCHER then
+		-- PRD §6: Report Card adalah alat Searcher ("Searcher menekan Report").
+		-- Role lain tidak memeriksa objek di lokasi.
 		return
 	end
 
@@ -515,24 +770,172 @@ local function handleReport(player: Player, payload: any): ()
 		return
 	end
 
+	local objectId = (payload :: { [string]: any }).object_id
+	if type(objectId) ~= "string" then
+		return
+	end
+
+	local object = LocationService.get(current.location, objectId)
+	if object == nil then
+		warn(
+			string.format(
+				"[Triangulate] laporan objek '%s' ditolak: tidak ada di lokasi '%s'",
+				objectId,
+				current.location.location
+			)
+		)
+		return
+	end
+
+	if not LocationService.isInspectable(current.location, objectId) then
+		warn(
+			string.format("[Triangulate] laporan objek '%s' ditolak: belum bisa dicapai", objectId)
+		)
+		return
+	end
+
 	TelemetryService.record(current.telemetry, {
 		kind = "clue",
 		role = role,
 		t = os.clock(),
-		detail = nil,
+		detail = objectId,
 	})
 
 	-- PRD §4: objek yang dilaporkan masuk ke clue board Director, dan kuncinya
-	-- sampai ke Handler. Tiap role menerima proyeksi berbeda dari payload yang
-	-- sama -- Handler menerima `gives_key`, Searcher dan Director tidak.
-	fireToRole("ReportCard", "report_card", payload :: { [string]: any })
+	-- sampai ke Handler. Payload dirakit server; tiap role menerima proyeksi
+	-- berbeda dari payload yang SAMA, dan `gives_key` hanya ada di allowlist
+	-- Handler (`Net.CLIENT_VIEWS.report_card`).
+	--
+	-- `gives_key` dibaca dari lokasi, bukan dari data kasus langsung: kunci
+	-- baru dianggap milik tim setelah pemeriksaannya selesai. Kalau dibaca
+	-- langsung dari node, Searcher bisa mengirim laporan objek yang belum
+	-- diperiksa dan Handler langsung menerima kuncinya.
+	local held = LocationService.keysHeld(current.location)
+	fireToRole("ReportCard", "report_card", {
+		id = string.format("rc_%s", objectId),
+		object_id = objectId,
+		title = object.label,
+		location = current.location.location,
+		image = nil,
+		gives_key = if object.gives_key ~= nil and held[object.gives_key] == true
+			then object.gives_key
+			else nil,
+	})
+end
+
+-- PRD §6: mini-aksi Searcher (senter UV, buka laci dengan hold, lockpick).
+--
+-- Klien mengirim niat, bukan hasil. Tiga fase:
+--   * "begin"    -- mulai menahan aksi; server mencatat waktu mulai dengan
+--                   jamnya sendiri.
+--   * "complete" -- klaim jari sudah selesai menahan; server memeriksa
+--                   durasinya terhadap jam yang sama. Klaim yang terlalu cepat
+--                   ditolak, jadi client tidak bisa mempercepat perolehan kunci
+--                   dengan mengirim "complete" lebih awal.
+--   * "cancel"   -- jari diangkat; tidak ada kunci yang diberikan.
+--
+-- Efek yang terlihat tim: kunci masuk ke `LocationService`, lalu meja bukti
+-- yang terbuka dikirim ke Handler dan Director. Itulah rantai PRD §4 --
+-- objek memberi kunci, kunci membuka potongan bukti.
+local function handleInspect(player: Player, payload: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	local role = roleOf(player.UserId)
+	if role ~= Roles.SEARCHER then
+		return
+	end
+
+	if type(payload) ~= "table" then
+		return
+	end
+
+	local data = payload :: { [string]: any }
+	local objectId = data.object_id
+	local actionId = data.action
+	local phase = data.phase
+	if type(objectId) ~= "string" or type(actionId) ~= "string" or type(phase) ~= "string" then
+		return
+	end
+
+	if phase == "begin" then
+		local ok, problem =
+			LocationService.beginInspect(current.location, player.UserId, objectId, actionId)
+		if not ok then
+			warn(string.format("[Triangulate] mulai periksa ditolak: %s", tostring(problem)))
+			return
+		end
+
+		TelemetryService.record(current.telemetry, {
+			kind = "input",
+			role = role,
+			t = os.clock(),
+			detail = objectId,
+		})
+		return
+	elseif phase == "cancel" then
+		LocationService.cancelInspect(current.location, player.UserId)
+		return
+	elseif phase ~= "complete" then
+		return
+	end
+
+	local ok, problem, key =
+		LocationService.completeInspect(current.location, player.UserId, objectId)
+	if not ok then
+		-- Termasuk "aksi belum selesai": klaim client yang terlalu cepat.
+		warn(string.format("[Triangulate] selesai periksa ditolak: %s", tostring(problem)))
+		return
+	end
+
+	TelemetryService.record(current.telemetry, {
+		kind = "clue",
+		role = role,
+		t = os.clock(),
+		detail = objectId,
+	})
+
+	local object = LocationService.get(current.location, objectId)
+	if object == nil then
+		return
+	end
+
+	-- Objek ambient tidak memberi kunci (PRD §6: "bukti tambahan opsional"),
+	-- jadi tidak ada meja yang terbuka. Searcher tetap boleh melaporkannya
+	-- lewat aksi Report.
+	if key == nil then
+		print(
+			string.format(
+				"[Triangulate] objek ambient '%s' diperiksa; tidak ada kunci yang diberikan",
+				objectId
+			)
+		)
+		return
+	end
+
+	print(
+		string.format(
+			"[Triangulate] kunci '%s' diperoleh dari objek '%s'; meja bukti terkait terbuka",
+			key,
+			objectId
+		)
+	)
+
+	-- Yang dikirim ke Handler/Director di sini adalah MEJA yang baru terbuka,
+	-- bukan Report Card. Report Card tetap milik aksi Report (PRD §4 langkah 2
+	-- memisahkan keduanya: objek "memberi kunci" ke Handler, dan "masuk ke clue
+	-- board Director sebagai Laporan"). Mengirim kartu dari dua tempat akan
+	-- menaruh dua kartu untuk satu objek di clue board.
+	sendAvailablePuzzle(current)
 end
 
 -- Mencari node `clue_card` berdasarkan id-nya di data kasus. Dipakai saat
 -- sebuah meja bukti selesai: `entry.yields` adalah id Clue Card, dan isinya
 -- dibaca dari data supaya tidak ada salinan teks clue di kode.
-local function clueCardById(case: CaseLoader.Case, id: string): { [string]: any }?
-	local nodes = (case :: any).nodes
+local function clueCardById(case: CaseSource.Case, id: string): { [string]: any }?
+	local nodes = case.nodes
 	if type(nodes) ~= "table" then
 		return nil
 	end
@@ -572,6 +975,26 @@ local function handlePlacePiece(player: Player, payload: any): ()
 
 	local entry = PuzzleTableService.get(current.puzzle, nodeId)
 	if entry == nil then
+		return
+	end
+
+	-- PRD §4: "Kunci membuka potongan bukti di meja." Meja yang belum terbuka
+	-- tidak boleh bisa dimajukan -- kalau tidak, seluruh gerbang kunci di
+	-- `LocationService` bisa dilewati hanya dengan mengirim `PlacePiece` ke
+	-- node yang sudah diketahui id-nya dari data.
+	if
+		not PuzzleTableService.isUnlocked(
+			current.puzzle,
+			nodeId,
+			LocationService.keysHeld(current.location)
+		)
+	then
+		warn(
+			string.format(
+				"[Triangulate] penempatan di meja '%s' ditolak: kuncinya belum dipegang tim",
+				nodeId
+			)
+		)
 		return
 	end
 
@@ -622,11 +1045,10 @@ local function handlePlacePiece(player: Player, payload: any): ()
 			)
 		end
 
-		-- Meja berikutnya menyusul, supaya Handler tidak menunggu perintah.
-		local nextEntry = PuzzleTableService.firstUnsolved(current.puzzle)
-		if nextEntry ~= nil then
-			fireToRole("PuzzleState", "puzzle_state", PuzzleTable.clientPayload(nextEntry.state))
-		end
+		-- Meja berikutnya yang TERSEDIA menyusul, supaya Handler tidak menunggu
+		-- perintah. Yang terkunci tidak dikirim: kuncinya baru datang dari
+		-- Searcher, dan `handleInspect` yang akan mengirimnya.
+		sendAvailablePuzzle(current)
 	end
 end
 
@@ -635,6 +1057,7 @@ remotes.PlacePiece.OnServerEvent:Connect(handlePlacePiece)
 remotes.Accuse.OnServerEvent:Connect(handleAccuse)
 remotes.ConfirmAccusation.OnServerEvent:Connect(handleConfirm)
 remotes.Report.OnServerEvent:Connect(handleReport)
+remotes.Inspect.OnServerEvent:Connect(handleInspect)
 
 -- ---------------------------------------------------------------------------
 -- 7. Lobby

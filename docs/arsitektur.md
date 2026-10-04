@@ -49,10 +49,18 @@ src/shared/                 Direplikasi ke client. TIDAK BOLEH berisi rahasia.
   Roles.luau                Tiga role, rotasi, prioritas keadilan (§3, §8, §10)
   Net.luau                  Kontrak remote + proyeksi per role (§15)
   PingPhrases.luau          Frasa ping wheel per role (§7)
+  PuzzleTable.luau          Aritmetika meja: clamp, snap, interpolasi (§15)
+  case/                     Skema dan validasi data kasus (murni, dual-target)
+    CaseGraph.luau          Ketergantungan, keterjangkauan, unlocks (§4)
+    CaseValidator.luau      Validator skema + graf (§10)
+    CaseLoader.luau         Validasi, pilih varian dari seed, proyeksi per role (§10)
+    Compat.luau             Jembatan require antara Lune dan Roblox
 
 src/server/                 ServerScriptService. Tidak pernah direplikasi.
   init.server.luau          Titik masuk: guard, remote, sesi, handler, lobby
-  CaseLoader.luau           Memuat dan memvalidasi kasus (§10)
+  CaseSource.luau           Sumber data kasus: ServerStorage + bentuk + seam validator (§10)
+  LocationService.luau      Lokasi: objek bisa diperiksa, mini-aksi, gerbang unlocks (§4, §6)
+  PuzzleTableService.luau   Meja puzzle: gerbang kunci, penyelesaian potongan (§4, §15)
   ClueGraph.luau            Graf ketergantungan: ketersediaan, asiklik (§4)
   DeductionEngine.luau      Resep deduksi (§4)
   AccusationService.luau    Tuduhan, percobaan, rank (§5)
@@ -66,6 +74,8 @@ src/client/                 StarterPlayerScripts.
   NetClient.luau            Binding remote; tiap remote punya fungsi bernama
   Hud/init.luau             Kerangka HUD
   Hud/PingWheel.luau        Ping wheel (§7)
+  Table/init.luau           Meja puzzle top-down: drag-and-snap (§4, §15)
+  Location/init.luau        Interaksi objek Searcher: hold, periksa, Report (§4, §6)
 
 data/cases/                 Di-mount ke ServerStorage.Cases
   gallery_01.json           Kasus contoh "Lukisan yang Tertukar" (§4)
@@ -210,16 +220,30 @@ sequenceDiagram
     Srv->>H: briefing (view "briefing", role Handler)
     H->>Srv: TargetMarker (ikon target)
     Srv->>D: TargetMarker (tampil di HUD)
-    S->>Srv: Report {object_id, location}
+    S->>Srv: Inspect {object_id, action, phase="begin"}
+    Note over Srv: LocationService.completeInspect — HANYA di server
+    S->>Srv: Inspect {object_id, action, phase="complete"}
+    Srv->>S: PuzzleState (view "puzzle_state", role Handler) — kunci membuka meja
+    S->>Srv: Report {object_id, action}
     Srv->>D: ReportCard (view "report_card", role Director)
     Srv->>H: ReportCard (view "report_card", role Handler) — berisi gives_key
     Note over Srv: DeductionEngine.combine — HANYA di server
     D->>Srv: SubmitDeduction [clueId...]
-    Srv->>D: DeductionResult (view "deduction")
+    Srv->>D: DeductionResult (view "deduction") — berisi unlocks
     D->>Srv: Accuse {culprit, motive, method}
     Note over Srv: AccusationService.submit — HANYA di server
     Srv->>D: AccusationResult "X dari 3 benar"
 ```
+
+Perhatikan `Inspect`: server mengirim `PuzzleState` ke **Handler**, bukan ke
+Searcher yang memicunya. Kunci yang diberikan objek adalah informasi role lain
+(PRD §1), jadi yang memeriksa objek tidak melihat apa yang terbuka karenanya.
+`Net.forRole` yang melakukannya — bukan pemeriksaan di client.
+
+`Report` tidak lagi membawa `location`. Nama lokasi dirangkai server dari
+`session.location.location`, sehingga client tidak bisa memalsukan tag lokasi di
+clue board Director. Lihat `docs/mvp-notes.md` §2.2 untuk apa yang diverifikasi
+server dan apa yang belum.
 
 Perhatikan panah `Srv->>H` dan `Srv->>D` pada langkah ReportCard: payload
 sumbernya **satu objek yang sama**, tetapi `Net.forRole` memproyeksikannya
@@ -234,6 +258,12 @@ arsitektur, bukan sekadar niat desain.
 | Handler dapat kunci, role lain tidak | `CLIENT_VIEWS.report_card` | §4 |
 | Director dapat jumlah gerbang deduksi, bukan deduksi mana yang kunci | `CLIENT_VIEWS.session_state.Director` | §5 |
 | Briefing per role berbeda | `CLIENT_VIEWS.briefing` + `data/cases/*.json` `briefings` | §9 |
+| `DeductionResult.unlocks` hanya berisi **id objek**, tidak pernah resepnya | `CLIENT_VIEWS.deduction` | §4, §5 |
+
+Baris terakhir itu sengaja: id objek sudah terlihat sebagai nama part di
+`Workspace`, jadi mengirimnya tidak menambah pengetahuan apa pun kepada client.
+Yang tidak ikut terkirim adalah pasangan Clue Card yang membukanya — itulah
+resepnya, dan resep hanya hidup di `DeductionEngine` di server.
 
 ---
 
@@ -242,13 +272,15 @@ arsitektur, bukan sekadar niat desain.
 Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 `Instance`, `UDim2`, `Player`:
 
-`Config`, `Roles`, `Net`, `PingPhrases`, `RoleAssignment`, `Matchmaking`,
-`AccusationService`, `DeductionEngine`, `ClueGraph`, `TelemetryService`,
-`NPCController`, `CaseGraph`, `CaseValidator`, dan bagian murni `CaseLoader`
-(`pickVariant`, `shapeProblems`).
+`Config`, `Roles`, `Net`, `PingPhrases`, `PuzzleTable`, `RoleAssignment`,
+`Matchmaking`, `AccusationService`, `DeductionEngine`, `ClueGraph`,
+`TelemetryService`, `NPCController`, `PuzzleTableService`, `LocationService`,
+`CaseGraph`, `CaseValidator`, dan `CaseLoader` (murni seluruhnya — pemilihan
+varian ada di `CaseLoader.selectVariant`, pemeriksaan bentuk ada di
+`CaseSource.shapeProblems` yang memang menyentuh `Instance`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 358 assertion berjalan dalam 0,24 detik
+Studio dan tanpa Roblox.** 628 assertion berjalan dalam 0,2 detik
 (`tests/run.luau`). Untuk game yang aturan menang-kalahnya serumit PRD §5
 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank S/A/B/C), itu
 perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio tiap kali".
@@ -256,8 +288,10 @@ perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio tiap kali".
 Pola yang dipakai untuk mencapai ini: **kebijakan masuk sebagai argumen, bukan
 sebagai `require`.** Contoh konkret:
 
-- `CaseLoader.load(casesFolder, caseId)` menerima folder, tidak memanggil
+- `CaseSource.load(casesFolder, caseId)` menerima folder, tidak memanggil
   `game:GetService("ServerStorage")`.
+- `LocationService.new(opts)` menerima `nodes`, `reachableIds`, dan `clock`,
+  tidak membacanya dari global.
 - `AccusationService.newSession(solution, fields, maxAttempts)` menerima angka,
   tidak `require` `Config`.
 - `Matchmaking.join(lobby, player, config)` menerima config, tidak membacanya
@@ -364,17 +398,18 @@ Semua perintah dijalankan dari akar repo.
 
 | Perintah | Hasil |
 |---|---|
-| `lune run tests/run.luau` | **358 assertion, 0 gagal** — 12 berkas spec |
-| `selene src tests` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
-| `luau-analyze --mode=strict` atas 13 modul murni | **0 diagnostik** |
-| `stylua --check src tests` | **bersih** (exit 0) |
+| `lune run tests/run.luau` | **628 assertion, 0 gagal** — 16 berkas spec |
+| `selene src tests tools` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
+| `luau-analyze --mode=strict` atas 17 modul murni | **0 diagnostik** |
+| `stylua --check src tests tools` | **bersih** (exit 0) |
 | `rojo build -o build.rbxlx` | **berhasil** |
 
 Hasil `rojo build` juga diperiksa isinya, bukan cuma status keluarnya: pohon
-yang dihasilkan benar — `ReplicatedStorage.Shared` berisi 4 ModuleScript,
-`ServerScriptService.Server` adalah `Script` dengan 8 ModuleScript anak,
-`ServerStorage.Cases` berisi `gallery_01`, `StarterPlayerScripts.Client` adalah
-`LocalScript` dengan `Hud` dan `NetClient`.
+yang dihasilkan benar — `ReplicatedStorage.Shared` berisi 5 ModuleScript dan
+folder `case/` (4 ModuleScript), `ServerScriptService.Server` adalah `Script`
+dengan 11 ModuleScript anak, `ServerStorage.Cases` berisi `gallery_01`,
+`StarterPlayerScripts.Client` adalah `LocalScript` dengan `Hud`, `NetClient`,
+`Table`, dan `Location`.
 
 ### Batas verifikasi yang harus dinyatakan jujur
 
@@ -385,11 +420,12 @@ tetapi **bukan** `--definitions`. Jadi modul yang menyentuh `Instance`,
 dan `Unknown global`, bukan karena kodenya salah, tetapi karena tipe itu tidak
 ada di binary-nya.
 
-Karena itu batasnya saya nyatakan eksplisit: **13 modul murni bersih di bawah
+Karena itu batasnya saya nyatakan eksplisit: **17 modul murni bersih di bawah
 `--mode=strict`; sisanya (`init.server.luau`, `init.client.luau`, `NetClient`,
-`Hud/*`, dan bagian `Instance` di `CaseLoader`) tidak bisa diperiksa tipe oleh
-binary ini.** Untuk itu dibutuhkan `luau-lsp` dengan `sourcemap.json` dari
-`rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD), bukan scaffold ini.
+`Hud/*`, `Table/*`, `Location/*`, dan `CaseSource` yang memanggil
+`game:GetService`) tidak bisa diperiksa tipe oleh binary ini.** Untuk itu
+dibutuhkan `luau-lsp` dengan `sourcemap.json` dari `rojo sourcemap` — dan itu
+bagian dari EXTA-34 (CI/CD), bukan scaffold ini.
 
 **`rojo build` membuktikan struktur, bukan perilaku.** Tidak ada Roblox runtime
 di lingkungan ini, jadi tidak ada satu pun baris `init.server.luau` yang pernah

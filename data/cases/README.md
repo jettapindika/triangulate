@@ -11,8 +11,8 @@ bocor".
 ## Satu kasus = satu berkas
 
 `<case_id>.json`. Nama berkas harus sama dengan `case_id` di dalamnya, karena
-`CaseLoader.load` mencari anak `ServerStorage.Cases` berdasarkan nama.
-`CaseLoader.availableCaseIds` mengurutkan hasilnya, jadi pemilihan kasus
+`CaseSource.load` mencari anak `ServerStorage.Cases` berdasarkan nama.
+`CaseSource.availableCaseIds` mengurutkan hasilnya, jadi pemilihan kasus
 deterministik.
 
 ## Aturan wajib: JSON `null` berubah menjadi `nil` di Luau
@@ -47,21 +47,29 @@ PRD §10 menulis node dengan kunci `"type"`. Di Luau, `type` **sah** sebagai nam
 field (`node.type` parse dengan benar; yang tidak boleh adalah memakai `type`
 sebagai nama variabel karena menutupi global `type`).
 
-`CaseLoader.shapeProblems` membaca `node.kind` lebih dulu lalu jatuh ke
+`CaseSource.shapeProblems` membaca `node.kind` lebih dulu lalu jatuh ke
 `node.type`, jadi kedua bentuk termuat. **Pakai `type`** supaya berkas kasus
 sama persis dengan PRD §10. Empat jenis yang dikenal: `object`, `evidence`,
 `clue_card`, `deduction`.
 
 ## Yang diperiksa saat start
 
-`CaseLoader.shapeProblems` adalah pemeriksaan bentuk minimum, bukan validator
+`CaseSource.shapeProblems` adalah pemeriksaan bentuk minimum, bukan validator
 skema. Yang ditangkapnya:
 
 - `case_id` ada dan berupa string;
 - `nodes` ada, berupa tabel, dan tidak kosong;
 - setiap node punya `id` yang tidak kosong, dan tidak ada `id` duplikat;
 - setiap node punya jenis yang dikenal;
-- setiap entri `needs` menunjuk node yang benar-benar ada.
+- setiap entri `needs` menunjuk sesuatu yang benar-benar ada — dan **jenis
+  node menentukan apa yang dimaksud**:
+  - pada `evidence`, `needs` berisi **kunci** (`gives_key` dari objek), mis.
+    `"key_a"`;
+  - pada `deduction`, `needs` berisi **id node** (Clue Card), mis.
+    `"clue_guard_off"`.
+
+  Keduanya diperiksa terhadap himpunan yang berbeda. Salah satu himpunan saja
+  akan menolak kasus yang sah — ini bug nyata yang diperbaiki di EXTA-55.
 
 Kasus yang gagal salah satu di atas **menghentikan start** (`error`), bukan
 menghasilkan sesi setengah jalan.
@@ -71,12 +79,16 @@ deliverable **EXTA-33** (`src/shared/case/CaseValidator.luau`). Seam-nya sudah
 ada:
 
 ```lua
-CaseLoader.setValidator(function(case)
+CaseSource.setValidator(function(case)
     -- kembalikan (ok: boolean, daftarMasalah: {string})
 end)
 ```
 
 `setValidator` mengembalikan validator sebelumnya supaya uji bisa memulihkannya.
+
+Varian dipilih di modul lain: `src/shared/case/CaseLoader.luau`, lewat
+`CaseLoader.load(case, seed)`. `CaseSource` sengaja tidak tahu apa pun soal
+varian.
 
 ## Graf: ketergantungan tanpa siklus
 

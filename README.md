@@ -27,12 +27,14 @@ src/shared/              Direplikasi ke client -- TIDAK BOLEH berisi rahasia
   case/                  Skema dan validasi data kasus (murni, dual-target)
     CaseGraph.luau       Ketergantungan, keterjangkauan, unlocks
     CaseValidator.luau   Validator skema + graf (asiklik, tanpa rantai buntu)
-    CaseLoader.luau      Pilih varian dari seed, proyeksi per role
+    CaseLoader.luau      Validasi, pilih varian dari seed, proyeksi per role
     Compat.luau          Jembatan require antara Lune dan Roblox
 
 src/server/              ServerScriptService -- tidak pernah direplikasi
   init.server.luau       Titik masuk: guard, remote, sesi, handler, lobby
-  CaseLoader.luau        Memuat kasus dari ServerStorage + seam validator
+  CaseSource.luau        Sumber data kasus: ServerStorage + pemeriksaan bentuk + seam validator
+  LocationService.luau   Lokasi: objek bisa diperiksa, mini-aksi, gerbang unlocks
+  PuzzleTableService.luau Meja puzzle: gerbang kunci, penyelesaian potongan
   ClueGraph.luau         Graf ketergantungan: ketersediaan, asiklik
   DeductionEngine.luau   Resep deduksi
   AccusationService.luau Tuduhan, percobaan, rank
@@ -46,6 +48,8 @@ src/client/              StarterPlayerScripts
   NetClient.luau         Binding remote; tiap remote punya fungsi bernama
   Hud/init.luau          Kerangka HUD
   Hud/PingWheel.luau     Ping wheel
+  Table/init.luau        Meja puzzle top-down (drag-and-snap)
+  Location/init.luau     Interaksi objek Searcher: tahan, periksa, Report
 
 schema/case.schema.json  Skema JSON data kasus (dokumentasi + alat luar)
 data/cases/              Di-mount ke ServerStorage.Cases
@@ -54,6 +58,7 @@ data/cases/              Di-mount ke ServerStorage.Cases
 
 tools/                   Alat CLI
   validate_case.luau     Validator kasus; exit 1 bila ada yang gagal
+  bukti-rantai-a.luau    Bukti rantai A->bukti end to end + uji kebocoran
 
 tests/                   Uji CLI via Lune (satu pintu: tests/run.luau)
   run.luau               Runner
@@ -75,9 +80,9 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau        # 358 assertion
-selene src tests               # lint
-stylua --check src tests       # format
+lune run tests/run.luau        # 628 assertion
+selene src tests tools         # lint
+stylua --check src tests tools # format
 ```
 
 Batasnya: `luau-analyze` yang berdiri sendiri tidak punya definisi API Roblox,
@@ -86,11 +91,14 @@ jadi ia hanya bisa memeriksa modul murni:
 ```sh
 luau-analyze --mode=strict \
   src/shared/Config.luau src/shared/Roles.luau src/shared/Net.luau \
-  src/shared/PingPhrases.luau src/server/RoleAssignment.luau \
-  src/server/Matchmaking.luau src/server/AccusationService.luau \
-  src/server/DeductionEngine.luau src/server/ClueGraph.luau \
-  src/server/TelemetryService.luau src/server/NPCController.luau \
-  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau
+  src/shared/PingPhrases.luau src/shared/PuzzleTable.luau \
+  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau \
+  src/shared/case/CaseLoader.luau \
+  src/server/RoleAssignment.luau src/server/Matchmaking.luau \
+  src/server/AccusationService.luau src/server/DeductionEngine.luau \
+  src/server/ClueGraph.luau src/server/TelemetryService.luau \
+  src/server/NPCController.luau src/server/PuzzleTableService.luau \
+  src/server/LocationService.luau
 ```
 
 Pemeriksaan tipe untuk berkas yang menyentuh API Roblox butuh `luau-lsp` dengan

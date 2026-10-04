@@ -29,6 +29,7 @@ export type Bound = {
 	RequestHint: RemoteEvent,
 	ConfirmAccusation: RemoteEvent,
 	PlacePiece: RemoteEvent,
+	Inspect: RemoteEvent,
 }
 
 -- Menunggu seluruh remote muncul. Dipanggil sekali di awal; kalau salah satu
@@ -58,13 +59,28 @@ function NetClient.bind(shared: Instance): Bound
 		RequestHint = waitFor("RequestHint"),
 		ConfirmAccusation = waitFor("ConfirmAccusation"),
 		PlacePiece = waitFor("PlacePiece"),
+		Inspect = waitFor("Inspect"),
 	}
 end
 
--- PRD §7: Report Card. Client hanya mengirim ID objek dan lokasinya; server
--- yang memutuskan apa yang kembali ke tiap role.
-function NetClient.report(bound: Bound, objectId: string, location: string): ()
-	bound.Report:FireServer({ object_id = objectId, location = location })
+-- PRD §7: Report Card. Client hanya mengirim ID objek; server yang memutuskan
+-- apa yang kembali ke tiap role -- termasuk tag lokasinya, yang dirakit dari
+-- lokasi sesi, bukan dari klaim client.
+--
+-- `action` adalah id mini-aksi yang dipakai Searcher (PRD §6). Ia dikirim
+-- supaya server bisa menolak pemeriksaan dengan aksi yang tidak cocok -- bukan
+-- supaya client bisa memilih aksi mana yang sah.
+function NetClient.report(bound: Bound, objectId: string, action: string?): ()
+	bound.Report:FireServer({ object_id = objectId, action = action })
+end
+
+-- PRD §6: mini-aksi Searcher. `phase` adalah "begin" | "complete" | "cancel".
+--
+-- Yang dikirim adalah niat, bukan hasil: server menghitung sendiri durasi tahan
+-- dari jamnya (`LocationService`), jadi client yang memalsukan "complete" tidak
+-- memperoleh kunci lebih cepat.
+function NetClient.inspect(bound: Bound, objectId: string, action: string, phase: string): ()
+	bound.Inspect:FireServer({ object_id = objectId, action = action, phase = phase })
 end
 
 -- PRD §4: Director menggabungkan Clue Card. Client mengirim daftar id; resep
