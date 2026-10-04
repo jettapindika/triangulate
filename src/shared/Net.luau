@@ -1,0 +1,262 @@
+--!strict
+-- Kontrak data server <-> client (PRD §15).
+--
+-- Mekanisme yang menjamin solusi tidak pernah sampai ke client ada dua lapis,
+-- dan keduanya harus tetap benar:
+--
+--   1. STRUKTURAL. Data kasus hidup di `ServerStorage.Cases` (lihat
+--      `default.project.json`). Dokumentasi Roblox: "Objects descending from
+--      ServerStorage will not replicate to the client and will not be
+--      accessible from LocalScripts."
+--      -> https://create.roblox.com/docs/reference/engine/classes/ServerStorage
+--      Jadi tabel solusi tidak punya jalur jaringan sama sekali. Modul ini
+--      hanya menyaring apa yang MEMANG dikirim lewat RemoteEvent.
+--
+--   2. PROYEKSI WHITELIST. Setiap payload yang menyeberang ke client dilewatkan
+--      `Net.project` dengan daftar field yang diizinkan untuk role penerimanya.
+--      Fungsi ini MENYALIN field yang disebut, bukan menghapus yang dilarang.
+--      Konsekuensinya: field baru yang ditambahkan ke data kasus tidak pernah
+--      bocor secara default -- penulis kasus harus secara sadar menambahkannya
+--      ke sebuah view. Ini kebalikan dari pendekatan blacklist, yang bocor
+--      begitu seseorang menambah field sensitif baru.
+--
+-- Modul ini murni: tidak menyentuh global Roblox, sehingga bisa diuji dari CLI
+-- (lihat `tests/net.spec.luau`). Jangan menambahkan referensi `game`/`script`
+-- di sini.
+
+local SECRET_FIELDS: { string } = {
+	"solution",
+	"variants",
+	"culprit",
+	"motive",
+	"method",
+	"key_deductions",
+	"lie",
+	"contradicted_by",
+	"draft",
+}
+
+local REMOTE_NAMES: { string } = {
+	"SessionState",
+	"ClueCard",
+	"TargetMarker",
+	"Pinpoint",
+	"ReportCard",
+	"AccusationResult",
+	"DeductionResult",
+	"Report",
+	"SubmitDeduction",
+	"Accuse",
+	"Ping",
+	"RequestHint",
+	"ConfirmAccusation",
+}
+
+-- Remote yang arahnya server -> client.
+local SERVER_TO_CLIENT: { [string]: boolean } = {
+	SessionState = true,
+	ClueCard = true,
+	TargetMarker = true,
+	Pinpoint = true,
+	ReportCard = true,
+	AccusationResult = true,
+	DeductionResult = true,
+}
+
+-- Remote yang arahnya client -> server. Setiap handler-nya wajib memvalidasi
+-- ulang argumen; client tidak dipercaya. Dokumentasi Roblox: "Every piece of
+-- data sent from a client must be validated by the server before it's used."
+-- -> https://create.roblox.com/docs/scripting/security/client-server-boundary
+local CLIENT_TO_SERVER: { [string]: boolean } = {
+	Report = true,
+	SubmitDeduction = true,
+	Accuse = true,
+	Ping = true,
+	RequestHint = true,
+	ConfirmAccusation = true,
+}
+
+-- Field yang boleh dilihat tiap role, per jenis payload.
+--
+-- `briefing` sengaja berbeda per role: PRD §4 dan §9 menyatakan tiap role
+-- memegang informasi berbeda. Searcher tidak boleh tahu isi meja Handler,
+-- dan tidak ada role yang boleh tahu field solusi.
+local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
+	-- PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu apa / Tugas pertamamu".
+	briefing = {
+		Searcher = { "case_id", "location", "objective", "knowns", "unknowns", "target" },
+		Handler = { "case_id", "location", "objective", "knowns", "unknowns", "target" },
+		Director = { "case_id", "location", "objective", "knowns", "unknowns", "statements" },
+	},
+
+	-- PRD §4: Clue Card adalah fakta yang dikirim dari bukti ke clue board.
+	clue_card = {
+		Searcher = { "id", "title", "summary" },
+		Handler = { "id", "title", "summary" },
+		Director = { "id", "title", "summary", "source" },
+	},
+
+	-- PRD §4: Deduksi menaruh pinpoint baru dan membuka target baru.
+	deduction = {
+		Searcher = { "id", "pinpoint", "unlocks" },
+		Handler = { "id", "pinpoint", "unlocks" },
+		Director = { "id", "pinpoint", "unlocks", "clue_ids" },
+	},
+
+	-- PRD §6: timer cleanup dan progres rantai.
+	--
+	-- `key_deductions_required` adalah ANGKA ambang gerbang (N), bukan daftar
+	-- deduksi mana yang kunci. Nama `key_deductions` sengaja tidak dipakai di
+	-- sini: ia ada di SECRET_FIELDS dan berarti daftar identitasnya. Memakai
+	-- nama yang sama untuk dua arti berbeda akan membuat `validateViews` gagal
+	-- -- dan memang seharusnya begitu, karena proyeksi whitelist bekerja per
+	-- nama field.
+	session_state = {
+		Searcher = { "case_id", "role", "phase", "seconds_left", "chains" },
+		Handler = { "case_id", "role", "phase", "seconds_left", "chains" },
+		Director = {
+			"case_id",
+			"role",
+			"phase",
+			"seconds_left",
+			"chains",
+			"deductions_done",
+			"key_deductions_required",
+		},
+	},
+
+	-- PRD §7: Report Card = foto objek + tag lokasi otomatis.
+	report_card = {
+		Searcher = { "id", "object_id", "location", "image" },
+		Handler = { "id", "object_id", "location", "image", "gives_key" },
+		Director = { "id", "object_id", "location", "image" },
+	},
+
+	-- PRD §5: feedback salah hanya "X dari 3 benar", tanpa menyebut field mana.
+	accusation_result = {
+		Searcher = { "correct_count", "attempts_left" },
+		Handler = { "correct_count", "attempts_left" },
+		Director = {
+			"correct_count",
+			"attempts_left",
+			"resolved",
+			"won",
+			"pending_confirmation",
+			"rank",
+		},
+	},
+
+	-- PRD §5: ruang pilihan untuk form tuduhan. Ini kandidat, bukan jawaban --
+	-- solusinya tetap hanya ada di server.
+	accusation_options = {
+		Searcher = { "suspects", "motives", "methods" },
+		Handler = { "suspects", "motives", "methods" },
+		Director = { "suspects", "motives", "methods" },
+	},
+}
+
+local Net = {
+	SECRET_FIELDS = SECRET_FIELDS,
+	REMOTE_NAMES = REMOTE_NAMES,
+	SERVER_TO_CLIENT = SERVER_TO_CLIENT,
+	CLIENT_TO_SERVER = CLIENT_TO_SERVER,
+	CLIENT_VIEWS = CLIENT_VIEWS,
+}
+
+-- Menyalin hanya field yang diizinkan.
+--
+-- `allowed` adalah himpunan nama field, bukan daftar bersarang: sebuah field
+-- yang lolos akan disalin apa adanya. Ini disengaja -- kedalaman struktur bukan
+-- tempat menyembunyikan rahasia, dan field bersarang yang sensitif harus punya
+-- namanya sendiri di `SECRET_FIELDS` supaya uji bisa menangkapnya.
+function Net.project(source: { [string]: any }, allowed: { string }): { [string]: any }
+	local allowedSet: { [string]: boolean } = {}
+	for _, name in allowed do
+		allowedSet[name] = true
+	end
+
+	local out: { [string]: any } = {}
+	for key, value in source do
+		if allowedSet[key] then
+			out[key] = value
+		end
+	end
+	return out
+end
+
+-- Proyeksi satu payload untuk satu role. Mengembalikan `nil` bila view atau
+-- role tidak dikenal -- pemanggil harus memperlakukan `nil` sebagai "jangan
+-- kirim", bukan sebagai "kirim kosong".
+function Net.forRole(view: string, role: string, source: { [string]: any }): { [string]: any }?
+	local byRole = CLIENT_VIEWS[view]
+	if byRole == nil then
+		return nil
+	end
+
+	local allowed = byRole[role]
+	if allowed == nil then
+		return nil
+	end
+
+	return Net.project(source, allowed)
+end
+
+-- Melaporkan field rahasia yang muncul di sebuah tabel, termasuk di dalam tabel
+-- bersarang. Dipakai uji, dan boleh dipakai sebagai assertion murah saat server
+-- start.
+function Net.findSecrets(value: any, path: string?): { string }
+	local found: { string } = {}
+	local here = path or ""
+
+	if type(value) ~= "table" then
+		return found
+	end
+
+	local secretSet: { [string]: boolean } = {}
+	for _, name in SECRET_FIELDS do
+		secretSet[name] = true
+	end
+
+	local asTable = value :: { [any]: any }
+	for key, child in asTable do
+		local childPath = here .. "." .. tostring(key)
+		if type(key) == "string" and secretSet[key] then
+			table.insert(found, childPath)
+		end
+		for _, nested in Net.findSecrets(child, childPath) do
+			table.insert(found, nested)
+		end
+	end
+
+	return found
+end
+
+-- Benar hanya bila tidak ada view yang mengizinkan field rahasia. Dipanggil uji
+-- dan saat server start.
+function Net.validateViews(): (boolean, { string })
+	local problems: { string } = {}
+
+	for viewName, byRole in CLIENT_VIEWS do
+		for roleName, allowed in byRole do
+			for _, field in allowed do
+				for _, secret in SECRET_FIELDS do
+					if field == secret then
+						table.insert(
+							problems,
+							string.format(
+								"%s.%s mengizinkan field rahasia '%s'",
+								viewName,
+								roleName,
+								secret
+							)
+						)
+					end
+				end
+			end
+		end
+	end
+
+	return #problems == 0, problems
+end
+
+return Net

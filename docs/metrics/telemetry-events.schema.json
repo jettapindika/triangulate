@@ -1,0 +1,388 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jettapindika/triangulate/schema/telemetry-events.v1.json",
+  "title": "Triangulate Telemetry Event v1",
+  "description": "Skema mesin untuk event telemetri Triangulate. Definisi manusiawi ada di docs/metrics/skema-event-telemetri.md; kamus metrik di docs/metrics/kamus-metrik.md.",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "#/$defs/envelope" },
+    {
+      "oneOf": [
+        { "$ref": "#/$defs/session_start" },
+        { "$ref": "#/$defs/lobby_enter" },
+        { "$ref": "#/$defs/lobby_exit" },
+        { "$ref": "#/$defs/role_assigned" },
+        { "$ref": "#/$defs/case_started" },
+        { "$ref": "#/$defs/case_completed" },
+        { "$ref": "#/$defs/case_0_skipped" },
+        { "$ref": "#/$defs/session_paused" },
+        { "$ref": "#/$defs/session_resumed" },
+        { "$ref": "#/$defs/player_left" },
+        { "$ref": "#/$defs/player_rejoined" },
+        { "$ref": "#/$defs/npc_takeover" },
+        { "$ref": "#/$defs/session_end" },
+        { "$ref": "#/$defs/object_reported" },
+        { "$ref": "#/$defs/clue_card_received" },
+        { "$ref": "#/$defs/first_clue" },
+        { "$ref": "#/$defs/evidence_completed" },
+        { "$ref": "#/$defs/deduction_made" },
+        { "$ref": "#/$defs/contradiction_marked" },
+        { "$ref": "#/$defs/accusation_submitted" },
+        { "$ref": "#/$defs/hint_used" },
+        { "$ref": "#/$defs/idle_start" },
+        { "$ref": "#/$defs/idle_end" }
+      ]
+    }
+  ],
+
+  "$defs": {
+    "role": { "enum": ["searcher", "handler", "director", "none"] },
+    "mode": { "enum": ["public", "private", "solo", "duo", "daily", "cold_case", "tutorial"] },
+
+    "envelope": {
+      "type": "object",
+      "required": [
+        "event_id", "event_name", "event_version", "t_server_ms",
+        "session_id", "server_id", "player_id", "role", "is_npc", "build_version"
+      ],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1, "description": "ULID; kunci idempoten di sink" },
+        "event_name": { "type": "string", "minLength": 1 },
+        "event_version": { "const": 1 },
+        "t_server_ms": { "type": "integer", "minimum": 0, "description": "epoch ms UTC, jam server; satu-satunya waktu untuk metrik" },
+        "t_client_ms": { "type": ["integer", "null"], "minimum": 0, "description": "diagnostik saja" },
+        "session_id": { "type": "string", "minLength": 1 },
+        "server_id": { "type": "string", "minLength": 1, "description": "Roblox JobId" },
+        "player_id": { "type": "string", "minLength": 1, "description": "UserId; 'npc:<role>' untuk NPC; 'server' untuk event lingkup server" },
+        "role": { "$ref": "#/$defs/role" },
+        "is_npc": { "type": "boolean" },
+        "case_id": { "type": ["string", "null"] },
+        "case_variant": { "type": ["string", "null"] },
+        "seed": { "type": ["string", "null"] },
+        "mode": { "oneOf": [{ "$ref": "#/$defs/mode" }, { "type": "null" }] },
+        "npc_director": { "type": "boolean", "description": "true bila sesi ini memakai NPC Director; memisahkan papan rank (PRD §8)" },
+        "build_version": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "caseScope": {
+      "type": "object",
+      "required": ["case_id", "case_variant", "seed", "mode"],
+      "properties": {
+        "case_id": { "type": "string", "minLength": 1 },
+        "case_variant": { "type": "string", "minLength": 1 },
+        "seed": { "type": "string", "minLength": 1 },
+        "mode": { "$ref": "#/$defs/mode" }
+      }
+    },
+
+    "session_start": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "session_start" },
+        "role": { "const": "none" },
+        "platform": { "enum": ["mobile", "desktop", "console"] },
+        "is_first_session": { "type": "boolean" },
+        "days_since_first_session": { "type": ["integer", "null"], "minimum": 0 },
+        "agency_id": { "type": ["string", "null"] },
+        "region": { "type": ["string", "null"] }
+      },
+      "required": ["platform", "is_first_session", "days_since_first_session"]
+    },
+
+    "lobby_enter": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "lobby_enter" },
+        "mode_preference": { "enum": ["public", "private", "solo", "duo"] },
+        "party_size": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "waited_from_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["mode_preference", "party_size", "waited_from_ms"]
+    },
+
+    "lobby_exit": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "lobby_exit" },
+        "role": { "const": "none" },
+        "reason": { "enum": ["started", "timeout", "all_left", "cancelled", "error"] },
+        "waited_ms": { "type": "integer", "minimum": 0 },
+        "human_count": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "npc_count": { "type": "integer", "minimum": 0, "maximum": 3 }
+      },
+      "required": ["reason", "waited_ms", "human_count", "npc_count"]
+    },
+
+    "role_assigned": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "role_assigned" },
+        "role": { "enum": ["searcher", "handler", "director"] },
+        "assignment_reason": { "enum": ["preference_1", "preference_2", "fairness", "npc_fill", "swap", "rejoin", "fill"] },
+        "preference_1": { "$ref": "#/$defs/role" },
+        "preference_2": { "$ref": "#/$defs/role" },
+        "lobby_wait_ms": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "required": ["assignment_reason", "preference_1", "preference_2"]
+    },
+
+    "case_started": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "case_started" },
+        "role": { "const": "none" },
+        "player_id": { "const": "server" },
+        "npc_director": { "type": "boolean" },
+        "player_count_human": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "par_time_s": { "type": ["integer", "null"], "minimum": 1, "description": "D2 (EXTA-33); sampai terpasang rank tidak dapat dihitung" }
+      },
+      "required": ["npc_director", "player_count_human"]
+    },
+
+    "case_completed": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "case_completed" },
+        "role": { "const": "none" },
+        "player_id": { "const": "server" },
+        "outcome": { "enum": ["win", "cold_case"] },
+        "accusation_attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "hints_used": { "type": "integer", "minimum": 0 },
+        "case_duration_ms": { "type": "integer", "minimum": 0 },
+        "rank": { "enum": ["S", "A", "B", "C", null] },
+        "rank_rule_version": { "type": "integer", "minimum": 1 },
+        "rank_board": { "enum": ["main", "npc_director"] },
+        "key_deductions_done": { "type": "integer", "minimum": 0 },
+        "contradictions_marked": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["outcome", "accusation_attempts", "hints_used", "case_duration_ms", "rank_rule_version", "rank_board", "key_deductions_done", "contradictions_marked"]
+    },
+
+    "case_0_skipped": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "case_0_skipped" },
+        "is_first_play": { "type": "boolean" }
+      },
+      "required": ["is_first_play"]
+    },
+
+    "session_paused": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "session_paused" },
+        "pause_reason": { "enum": ["cutscene", "tutorial_overlay", "loading", "error_recovery"] },
+        "scope": { "enum": ["session", "role"] }
+      },
+      "required": ["pause_reason", "scope"]
+    },
+
+    "session_resumed": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "session_resumed" },
+        "pause_reason": { "enum": ["cutscene", "tutorial_overlay", "loading", "error_recovery"] },
+        "scope": { "enum": ["session", "role"] }
+      },
+      "required": ["pause_reason", "scope"]
+    },
+
+    "player_left": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "player_left" },
+        "reason": { "enum": ["voluntary", "disconnect", "afk_timeout", "kicked"] },
+        "t_since_case_start_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "case_completed": { "type": "boolean" },
+        "rejoin_window_ms": { "type": ["integer", "null"], "minimum": 0, "description": "300000 saat disconnect (PRD §8)" }
+      },
+      "required": ["reason", "case_completed"]
+    },
+
+    "player_rejoined": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "player_rejoined" },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 },
+        "away_duration_ms": { "type": "integer", "minimum": 0 },
+        "replaced_npc": { "type": "boolean" }
+      },
+      "required": ["t_since_case_start_ms", "away_duration_ms", "replaced_npc"]
+    },
+
+    "npc_takeover": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "npc_takeover" },
+        "role": { "enum": ["searcher", "handler", "director"] },
+        "trigger": { "enum": ["afk_60s", "disconnect"] },
+        "takeover_player_id": { "type": "string", "minLength": 1 }
+      },
+      "required": ["trigger", "takeover_player_id"]
+    },
+
+    "session_end": {
+      "type": "object",
+      "properties": {
+        "event_name": { "const": "session_end" },
+        "end_reason": { "enum": ["completed", "left", "disconnect", "afk_timeout", "server_shutdown", "error"] },
+        "session_duration_ms": { "type": "integer", "minimum": 0 },
+        "case_started": { "type": "boolean" },
+        "case_completed": { "type": "boolean" }
+      },
+      "required": ["end_reason", "session_duration_ms", "case_started", "case_completed"]
+    },
+
+    "object_reported": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "object_reported" },
+        "role": { "const": "searcher" },
+        "node_id": { "type": "string", "minLength": 1 },
+        "object_kind": { "type": "string", "minLength": 1 },
+        "is_ambient": { "type": "boolean", "description": "objek ambient PRD §6, bukan objek rantai" },
+        "gave_key": { "type": "boolean" },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["node_id", "object_kind", "is_ambient", "gave_key", "t_since_case_start_ms"]
+    },
+
+    "clue_card_received": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "clue_card_received" },
+        "role": { "const": "director" },
+        "node_id": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["evidence", "report"] },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["node_id", "source", "t_since_case_start_ms"]
+    },
+
+    "first_clue": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "first_clue" },
+        "role": { "enum": ["searcher", "handler", "director"] },
+        "clue_kind": { "enum": ["object", "evidence", "clue_card"] },
+        "node_id": { "type": "string", "minLength": 1 },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["clue_kind", "node_id", "t_since_case_start_ms"]
+    },
+
+    "evidence_completed": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "evidence_completed" },
+        "role": { "const": "handler" },
+        "node_id": { "type": "string", "minLength": 1 },
+        "puzzle_type": { "enum": ["torn_doc", "timeline", "cipher"] },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "attempt_count": { "type": "integer", "minimum": 1 },
+        "was_npc": { "type": "boolean" },
+        "assisted_by": { "oneOf": [{ "$ref": "#/$defs/role" }, { "type": "null" }] },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["node_id", "puzzle_type", "duration_ms", "attempt_count", "was_npc", "assisted_by", "t_since_case_start_ms"]
+    },
+
+    "deduction_made": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "deduction_made" },
+        "role": { "const": "director" },
+        "deduction_id": { "type": "string", "minLength": 1 },
+        "input_node_ids": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 } },
+        "is_key_deduction": { "type": "boolean", "description": "masuk gerbang N, PRD §5" },
+        "hint_assisted": { "type": "boolean" },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["deduction_id", "input_node_ids", "is_key_deduction", "t_since_case_start_ms"]
+    },
+
+    "contradiction_marked": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "contradiction_marked" },
+        "role": { "const": "director" },
+        "statement_id": { "type": "string", "minLength": 1 },
+        "contradicted_by_node_id": { "type": "string", "minLength": 1 },
+        "is_correct": { "type": "boolean" },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["statement_id", "contradicted_by_node_id", "is_correct", "t_since_case_start_ms"]
+    },
+
+    "accusation_submitted": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "accusation_submitted" },
+        "role": { "const": "director" },
+        "attempt_no": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "culprit_correct": { "type": "boolean" },
+        "motive_correct": { "type": "boolean" },
+        "method_correct": { "type": "boolean" },
+        "correct_fields_count": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "confirm_role": { "$ref": "#/$defs/role" },
+        "gate_open": { "type": "boolean" },
+        "key_deductions_done": { "type": "integer", "minimum": 0 },
+        "hints_used_at_submit": { "type": "integer", "minimum": 0 },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["attempt_no", "correct_fields_count", "confirm_role", "gate_open", "t_since_case_start_ms"]
+    },
+
+    "hint_used": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "hint_used" },
+        "requester_role": { "$ref": "#/$defs/role" },
+        "approver_role": { "$ref": "#/$defs/role" },
+        "hint_id": { "type": "string", "minLength": 1 },
+        "hint_scope": { "enum": ["target", "deduction", "statement"] },
+        "hint_source": { "enum": ["free_quota", "rookie", "progress"] },
+        "remaining_quota": { "type": "integer", "minimum": 0 },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["requester_role", "approver_role", "hint_id", "hint_scope", "hint_source", "remaining_quota", "t_since_case_start_ms"]
+    },
+
+    "idle_start": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "idle_start" },
+        "role": { "enum": ["searcher", "handler", "director"] },
+        "idle_threshold_ms": { "type": "integer", "minimum": 1 },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0, "description": "dihitung dari bucket INACTIVE pertama, bukan waktu kirim" }
+      },
+      "required": ["idle_threshold_ms", "t_since_case_start_ms"]
+    },
+
+    "idle_end": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/caseScope" }],
+      "properties": {
+        "event_name": { "const": "idle_end" },
+        "role": { "enum": ["searcher", "handler", "director"] },
+        "idle_duration_ms": { "type": "integer", "minimum": 0 },
+        "ended_by": { "enum": ["input", "npc_takeover", "player_left", "session_end", "paused"] },
+        "t_since_case_start_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["idle_duration_ms", "ended_by", "t_since_case_start_ms"]
+    }
+  }
+}
