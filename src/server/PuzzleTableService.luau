@@ -32,13 +32,16 @@
 local PuzzleTableService = {}
 
 -- Node bukti dari data kasus. Bentuknya sengaja lebih longgar daripada
--- `CaseLoader.CaseNode` supaya modul ini tidak perlu ikut berubah saat loader
+-- `CaseSource.CaseNode` supaya modul ini tidak perlu ikut berubah saat loader
 -- menambah field.
 export type Node = {
 	id: string,
 	kind: string?,
 	type: string?,
 	puzzle: string?,
+	-- Kunci yang harus dipegang Handler sebelum meja ini boleh disentuh
+	-- (PRD §4: objek memberi kunci, kunci membuka potongan bukti).
+	needs: { string }?,
 	yields: string?,
 	variants: { string }?,
 }
@@ -48,6 +51,10 @@ export type Entry = {
 	puzzle_id: string,
 	puzzle_type: string,
 	state: any,
+	-- Kunci yang diminta node bukti ini. `nil` berarti meja terbuka sejak awal.
+	-- Dipakai `isUnlocked`/`firstAvailable`; disimpan di sini supaya gerbangnya
+	-- tidak perlu membaca ulang data kasus.
+	needs: { string }?,
 	-- Node Clue Card yang terbuka saat meja ini selesai (PRD §4: bukti
 	-- `yields` sebuah Clue Card). Dipakai glue untuk mengirim ClueCard.
 	yields: string?,
@@ -73,7 +80,7 @@ end
 --[[
 	Jenis sebuah node, menerima `kind` maupun `type`.
 
-	`src/server/CaseLoader.luau` menerima keduanya dengan alasan yang sama
+	`src/server/CaseSource.luau` menerima keduanya dengan alasan yang sama
 	(`kind` untuk penulis kasus yang menghindari kata kunci), jadi aturan
 	tersebut diulang di sini alih-alih diasumsikan sudah dinormalkan loader.
 ]]
@@ -157,6 +164,7 @@ function PuzzleTableService.build(
 			puzzle_id = node.id,
 			puzzle_type = puzzleType,
 			state = state,
+			needs = node.needs,
 			yields = node.yields,
 			solved = false,
 		})
@@ -192,6 +200,69 @@ function PuzzleTableService.firstUnsolved(service: Service): Entry?
 	for _, nodeId in service.order do
 		local entry = service.entries[nodeId]
 		if entry ~= nil and not entry.solved then
+			return entry
+		end
+	end
+	return nil
+end
+
+--[[
+	Apakah meja ini boleh disentuh dengan kunci yang dipegang sekarang.
+
+	PRD §4: rantai bukti berjalan objek -> kunci -> bukti. Meja tanpa `needs`
+	terbuka sejak awal (mis. bukti yang memang tidak terkunci); meja dengan
+	`needs` menuntut SEMUA kuncinya sudah dipegang -- `needs` adalah daftar
+	syarat, bukan pilihan.
+
+	Meja yang tidak dikenal mengembalikan `false`: "tidak ada" tidak sama dengan
+	"terbuka".
+]]
+function PuzzleTableService.isUnlocked(
+	service: Service,
+	nodeId: string,
+	keysHeld: { [string]: boolean }
+): boolean
+	local entry = service.entries[nodeId]
+	if entry == nil then
+		return false
+	end
+
+	local needs = entry.needs
+	if needs == nil or #needs == 0 then
+		return true
+	end
+
+	for _, key in needs do
+		if keysHeld[key] ~= true then
+			return false
+		end
+	end
+	return true
+end
+
+--[[
+	Meja pertama yang belum selesai DAN sudah terbuka.
+
+	Dipakai glue supaya Handler tidak dikirimi meja yang kuncinya belum ia
+	pegang -- mengirimnya akan menampilkan bukti yang belum boleh dibuka, dan
+	itu kebocoran urutan, bukan sekadar UX. Urutannya tetap `order`, jadi
+	pilihannya deterministik.
+
+	`firstUnsolved` tetap ada dan tetap dipakai untuk pertanyaan berbeda
+	("apakah masih ada meja tersisa"), sehingga kedua pertanyaan tidak
+	tercampur dalam satu fungsi.
+]]
+function PuzzleTableService.firstAvailable(
+	service: Service,
+	keysHeld: { [string]: boolean }
+): Entry?
+	for _, nodeId in service.order do
+		local entry = service.entries[nodeId]
+		if
+			entry ~= nil
+			and not entry.solved
+			and PuzzleTableService.isUnlocked(service, nodeId, keysHeld)
+		then
 			return entry
 		end
 	end

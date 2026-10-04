@@ -1,7 +1,7 @@
 --!strict
 -- Uji kebocoran solusi lintas lapisan (PRD §15, kriteria terima EXTA-54).
 --
--- `net.spec.luau` menguji `Net` dengan data sintetis dan `case-loader.spec.luau`
+-- `net.spec.luau` menguji `Net` dengan data sintetis dan `case-source.spec.luau`
 -- menguji proyeksi EXTA-33. Yang belum terjaga: payload yang benar-benar
 -- menyeberang, yaitu `briefings` (field yang ditambahkan saat integrasi stage 1)
 -- yang dirakit `init.server.luau` lalu dilewatkan `Net.forRole`. Itu yang
@@ -82,6 +82,10 @@ local function payloadFor(view: string, role: string): { [string]: any }
 			key_deductions = gallery.key_deductions,
 		}
 	elseif view == "report_card" then
+		-- `label` ditambahkan EXTA-55: label objek dari data kasus, dan bukan
+		-- rahasia -- Searcher melihat objeknya. `gives_key` tetap Handler-only,
+		-- jadi payload ini sengaja membawa keduanya sekaligus: kalau proyeksinya
+		-- salah, kunci akan muncul di temuan.
 		return {
 			id = "rc_1",
 			object_id = "obj_schedule",

@@ -23,6 +23,7 @@ local PingPhrases = require(Shared.PingPhrases)
 local NetClient = require(script.NetClient)
 local Hud = require(script.Hud)
 local Table = require(script.Table)
+local Location = require(script.Location)
 
 local player = Players.LocalPlayer
 local bound = NetClient.bind(Shared)
@@ -38,8 +39,17 @@ local bound = NetClient.bind(Shared)
 -- saja belum tiba.
 local table_: Table.Mount? = nil
 
+-- Lokasi (PRD §4, §6). Dipasang LAZY, saat role diketahui Searcher -- sama
+-- alasannya dengan meja di atas: server hanya mengirim objek lokasi lewat
+-- atribut part, dan prompt-nya hanya berguna bagi Searcher. Handler dan
+-- Director berada di meja dan clue board (PRD §3).
+local location: Location.Mount? = nil
+
 -- Status yang ditampilkan HUD. Server adalah satu-satunya penulis nilai-nilai
 -- ini; client tidak menghitungnya sendiri.
+--
+-- Dideklarasikan SEBELUM `mountLocationIfSearcher` di bawah: fungsi itu membaca
+-- `state.role` untuk memutuskan apakah lokasi perlu dipasang.
 local state: Hud.State = {
 	role = nil,
 	phase = nil,
@@ -59,6 +69,27 @@ local state: Hud.State = {
 	coldCaseRecap = nil,
 	accusationOptions = nil,
 }
+
+-- Lokasi dipasang saat role sudah diketahui Searcher (PRD §6: mini-aksi dan
+-- prompt ada di sisi Searcher). Dipanggil dari handler `SessionState`, jadi
+-- pemasangannya menunggu role yang asli dari server, bukan tebakan client.
+local function mountLocationIfSearcher(): ()
+	if location ~= nil or state.role ~= "Searcher" then
+		return
+	end
+
+	location = Location.mount({
+		inspect = function(objectId: string, action: string, phase: string)
+			NetClient.inspect(bound, objectId, action, phase)
+		end,
+		report = function(objectId: string, action: string)
+			-- Lokasi TIDAK dikirim: server memakai lokasi sesinya sendiri
+			-- (`current.location.location`). Mengirimkannya dari client berarti
+			-- mengizinkan client mengarang tag lokasi di clue board Director.
+			NetClient.report(bound, objectId, action)
+		end,
+	})
+end
 
 local hud = Hud.mount(player, state, {
 	onPing = function(phraseId: string)
@@ -150,6 +181,10 @@ bound.SessionState.OnClientEvent:Connect(function(payload: any)
 	if payload.objective ~= nil then
 		hud.showRoleCard(payload)
 	end
+
+	-- Role baru diketahui dari briefing pertama. Inilah saat yang tepat
+	-- memasang lokasi: sebelum ini kita belum tahu apakah pemain ini Searcher.
+	mountLocationIfSearcher()
 
 	hud.update(state)
 end)
