@@ -52,4 +52,15 @@ Config.ACCUSATION_FIELDS = { "culprit", "motive", "method" }
 -- PRD §8: sesi dengan NPC Director dihitung pada rank terpisah.
 Config.SEPARATE_RANK_FOR_NPC_DIRECTOR = true
 
+-- PRD §15: meja puzzle Handler, kamera Scriptable top-down dengan raycast ke
+-- bidang meja. Angka ini adalah ukuran bidang meja dalam stud; seluruh
+-- keputusan snap berjalan dalam satuan sel (`shared/PuzzleTable.luau`), jadi
+-- angka ini hanya memetakan sel ke geometri dunia.
+--
+-- ASUMSI: 16x16 stud berarti 4x4 stud per potongan pada grid 4x4 -- cukup besar
+-- untuk jari di layar ponsel pada zoom top-down yang wajar. Belum diukur di
+-- perangkat; playtest minggu 7 (PRD §17) yang menentukan angkanya.
+Config.TABLE_WIDTH = 16
+Config.TABLE_HEIGHT = 16
+
 return Config

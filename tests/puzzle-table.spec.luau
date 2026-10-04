@@ -44,8 +44,16 @@ Harness.equal(
 Harness.suite("PuzzleTable: cellAt")
 
 local cells = board()
-Harness.equal(PuzzleTable.cellAt(cells, { x = 0.5, y = 0.5 }), { col = 0, row = 0 }, "pusat sel pertama")
-Harness.equal(PuzzleTable.cellAt(cells, { x = 3.5, y = 3.5 }), { col = 3, row = 3 }, "pusat sel terakhir")
+Harness.equal(
+	PuzzleTable.cellAt(cells, { x = 0.5, y = 0.5 }),
+	{ col = 0, row = 0 },
+	"pusat sel pertama"
+)
+Harness.equal(
+	PuzzleTable.cellAt(cells, { x = 3.5, y = 3.5 }),
+	{ col = 3, row = 3 },
+	"pusat sel terakhir"
+)
 
 -- Jari yang keluar meja tidak boleh membuat potongan menghilang: sel dijepit.
 local edge = PuzzleTable.cellAt(cells, { x = -5, y = -5 })
@@ -62,7 +70,6 @@ Harness.near(distanceAtCorner, math.sqrt(0.5), "jarak di sudut sel adalah seteng
 
 Harness.suite("PuzzleTable: resolveDrop")
 
-local _, center = PuzzleTable.cellAt(cells, { x = 0.5, y = 0.5 })
 local lastLegal = { x = 2.5, y = 2.5 }
 
 local hitCell, hitPos = PuzzleTable.resolveDrop(cells, { x = 0.5, y = 0.5 }, lastLegal)
@@ -83,29 +90,40 @@ Harness.equal(missCell, nil, "drop di sudut sel ditolak")
 Harness.equal(missPos, lastLegal, "drop yang ditolak mengembalikan posisi sah terakhir")
 
 local customCell = PuzzleTable.resolveDrop(cells, { x = 1, y = 1 }, lastLegal, 0.75)
-Harness.equal(customCell, { col = 1, row = 1 }, "toleransi yang dilonggarkan menerima drop yang sama")
+Harness.equal(
+	customCell,
+	{ col = 1, row = 1 },
+	"toleransi yang dilonggarkan menerima drop yang sama"
+)
 
 Harness.suite("PuzzleTable: place")
 
 local state = solved()
-local _, placedAccepted = PuzzleTable.place(state, "torn_doc:ev_schedule:0", { col = 0, row = 0 }, lastLegal)
+local _, placedAccepted =
+	PuzzleTable.place(state, "torn_doc:ev_schedule:0", { col = 0, row = 0 }, lastLegal)
 Harness.ok(placedAccepted, "menempatkan potongan ke sel tujuannya diterima")
 
 local piece0 = state.pieces[1]
 Harness.ok(piece0.correct, "potongan di sel tujuan ditandai correct")
 Harness.ok(piece0.placed, "potongan di sel tujuan ditandai placed")
 
-local _, wrongAccepted = PuzzleTable.place(state, "torn_doc:ev_schedule:0", { col = 3, row = 3 }, lastLegal)
+local _, wrongAccepted =
+	PuzzleTable.place(state, "torn_doc:ev_schedule:0", { col = 3, row = 3 }, lastLegal)
 Harness.ok(wrongAccepted, "penempatan ke sel lain tetap sah secara aturan")
 Harness.check(not piece0.correct, "potongan di sel yang salah TIDAK ditandai correct")
 Harness.equal(piece0.cell, { col = 3, row = 3 }, "sel potongan diperbarui")
 
-local _, unknownAccepted = PuzzleTable.place(state, "potongan:hantu", { col = 0, row = 0 }, lastLegal)
+local _, unknownAccepted =
+	PuzzleTable.place(state, "potongan:hantu", { col = 0, row = 0 }, lastLegal)
 Harness.check(not unknownAccepted, "id potongan tak dikenal ditolak")
 
 local _, nilCellAccepted = PuzzleTable.place(state, "torn_doc:ev_schedule:0", nil, lastLegal)
 Harness.check(not nilCellAccepted, "drop dengan sel nil ditolak")
-Harness.equal(piece0.pos, lastLegal, "drop yang ditolak mengembalikan potongan ke posisi sah terakhir")
+Harness.equal(
+	piece0.pos,
+	lastLegal,
+	"drop yang ditolak mengembalikan potongan ke posisi sah terakhir"
+)
 Harness.check(not piece0.placed, "drop yang ditolak melepas potongan dari sel")
 
 Harness.suite("PuzzleTable: isSolved dan solvedCount")
@@ -116,13 +134,13 @@ Harness.ok(PuzzleTable.isSolved(solved()), "meja yang baru dibuat dianggap seles
 local broken = solved()
 PuzzleTable.place(broken, "torn_doc:ev_schedule:5", { col = 0, row = 0 }, lastLegal)
 Harness.equal(PuzzleTable.solvedCount(broken), 7, "satu potongan yang salah menurunkan hitungan")
-Harness.check(not PuzzleTable.isSolved(broken), "satu potongan yang salah membuat puzzle belum selesai")
+Harness.check(
+	not PuzzleTable.isSolved(broken),
+	"satu potongan yang salah membuat puzzle belum selesai"
+)
 
 local empty = PuzzleTable.newState("kosong", board(), {})
-Harness.check(
-	not PuzzleTable.isSolved(empty),
-	"meja tanpa potongan TIDAK dianggap selesai"
-)
+Harness.check(not PuzzleTable.isSolved(empty), "meja tanpa potongan TIDAK dianggap selesai")
 
 Harness.suite("PuzzleTable: interpolate")
 
@@ -212,8 +230,16 @@ Harness.equal(behindX, nil, "bidang di belakang sinar tidak menghasilkan perpoto
 
 Harness.suite("PuzzleTable: remoteMessages")
 
-Harness.equal(PuzzleTable.remoteMessages("per_frame", 60, 1), 60, "jalur A mengirim satu pesan per frame")
-Harness.equal(PuzzleTable.remoteMessages("on_release", 60, 1), 1, "jalur B mengirim satu pesan per potongan")
+Harness.equal(
+	PuzzleTable.remoteMessages("per_frame", 60, 1),
+	60,
+	"jalur A mengirim satu pesan per frame"
+)
+Harness.equal(
+	PuzzleTable.remoteMessages("on_release", 60, 1),
+	1,
+	"jalur B mengirim satu pesan per potongan"
+)
 Harness.throws(function()
 	PuzzleTable.remoteMessages("jalur_tidak_ada", 60, 1)
 end, "mode drag tak dikenal ditolak, bukan diam-diam dianggap nol")
@@ -229,7 +255,12 @@ for _, puzzleType in { "torn_doc", "timeline", "cipher" } do
 	local cols, rows = PuzzleTable.gridFor(puzzleType)
 	Harness.check(
 		(cols :: number) <= PuzzleTable.MAX_GRID and (rows :: number) <= PuzzleTable.MAX_GRID,
-		string.format("grid %s menghormati batas %dx%d PRD §15", puzzleType, PuzzleTable.MAX_GRID, PuzzleTable.MAX_GRID)
+		string.format(
+			"grid %s menghormati batas %dx%d PRD §15",
+			puzzleType,
+			PuzzleTable.MAX_GRID,
+			PuzzleTable.MAX_GRID
+		)
 	)
 end
 
@@ -253,14 +284,22 @@ local function scattered(): PuzzleTable.State
 end
 
 local tableState = scattered()
-Harness.equal(PuzzleTable.solvedCount(tableState), 0, "meja teracak tidak punya potongan yang sudah benar")
+Harness.equal(
+	PuzzleTable.solvedCount(tableState),
+	0,
+	"meja teracak tidak punya potongan yang sudah benar"
+)
 
 -- Potongan 0 bertarget sel (0,0); pusatnya di ternormalisasi (0.125, 0.125).
 local piece0Id = tableState.pieces[1].id
 local dropPayload, dropSolved = PuzzleTable.applyDrop(tableState, piece0Id, 0.125, 0.125)
 Harness.ok(dropPayload.accepted, "drop tepat di pusat sel tujuan diterima")
 Harness.check(not dropSolved, "satu potongan benar belum menyelesaikan puzzle")
-Harness.equal(PuzzleTable.solvedCount(tableState), 1, "hitungan potongan benar naik setelah drop diterima")
+Harness.equal(
+	PuzzleTable.solvedCount(tableState),
+	1,
+	"hitungan potongan benar naik setelah drop diterima"
+)
 Harness.near(dropPayload.x :: number, 0.5, "payload membawa posisi otoritatif x")
 Harness.near(dropPayload.y :: number, 0.5, "payload membawa posisi otoritatif y")
 
@@ -268,7 +307,11 @@ Harness.near(dropPayload.y :: number, 0.5, "payload membawa posisi otoritatif y"
 local beforeX = tableState.pieces[2].pos.x
 local missPayload = PuzzleTable.applyDrop(tableState, tableState.pieces[2].id, 0.25, 0.25)
 Harness.check(not missPayload.accepted, "drop di sudut sel ditolak")
-Harness.near(tableState.pieces[2].pos.x, beforeX, "potongan yang ditolak kembali ke posisi sah terakhirnya")
+Harness.near(
+	tableState.pieces[2].pos.x,
+	beforeX,
+	"potongan yang ditolak kembali ke posisi sah terakhirnya"
+)
 
 -- Potongan yang sengaja ditaruh di sel yang salah tetap diterima sebagai
 -- penempatan, tetapi tidak dihitung sebagai benar.
@@ -317,6 +360,109 @@ for _, piece in finish.pieces do
 		(target.row + 0.5) / finish.board.rows
 	)
 end
-Harness.equal(PuzzleTable.solvedCount(finish), 16, "seluruh 16 potongan bisa diselesaikan lewat applyDrop")
+Harness.equal(
+	PuzzleTable.solvedCount(finish),
+	16,
+	"seluruh 16 potongan bisa diselesaikan lewat applyDrop"
+)
 Harness.ok((solvedPayload :: { [string]: any }).accepted, "drop terakhir diterima")
 Harness.ok(PuzzleTable.isSolved(finish), "meja selesai setelah seluruh potongan benar")
+
+Harness.suite("PuzzleTable: forPuzzle")
+
+-- Konstruktor yang dipakai server saat memuat kasus: tipe puzzle -> meja siap
+-- main. Yang penting di sini bukan hanya bentuknya, tetapi juga bahwa tipe yang
+-- tidak dikenal mengembalikan nil -- satu node bukti bertipe baru tidak boleh
+-- menjatuhkan sesi tiga pemain.
+local seeded = 0
+local function deterministic(): number
+	seeded += 1
+	return (seeded * 0.37) % 1
+end
+
+local built = PuzzleTable.forPuzzle("torn_doc", "ev_schedule", 8, 8, deterministic)
+Harness.check(built ~= nil, "forPuzzle mengenali tipe torn_doc")
+local builtState = built :: PuzzleTable.State
+Harness.equal(
+	{ builtState.board.cols, builtState.board.rows },
+	{ 4, 4 },
+	"forPuzzle memakai grid 4x4 untuk torn_doc"
+)
+Harness.equal(#builtState.pieces, 16, "forPuzzle membuat 16 potongan")
+Harness.equal(builtState.puzzle_id, "ev_schedule", "forPuzzle menyimpan id puzzle yang diberikan")
+
+local allScattered = true
+local allInside = true
+for _, piece in builtState.pieces do
+	if piece.placed or piece.correct or piece.cell ~= nil then
+		allScattered = false
+	end
+	if piece.pos.x <= 0 or piece.pos.x >= 4 or piece.pos.y <= 0 or piece.pos.y >= 4 then
+		allInside = false
+	end
+end
+Harness.check(allScattered, "forPuzzle mengacak seluruh potongan: tidak ada yang sudah benar")
+Harness.check(allInside, "forPuzzle menaruh seluruh potongan di dalam batas meja")
+Harness.check(not PuzzleTable.isSolved(builtState), "meja yang baru dibuat belum selesai")
+
+Harness.equal(
+	PuzzleTable.forPuzzle("puzzle_hantu", "x", 8, 8, deterministic),
+	nil,
+	"forPuzzle mengembalikan nil untuk tipe tak dikenal, bukan meja kosong"
+)
+
+Harness.suite("PuzzleTable: pieceAt dan cellContaining")
+
+local probe =
+	PuzzleTable.forPuzzle("torn_doc", "ev_schedule", 8, 8, deterministic) :: PuzzleTable.State
+local target = probe.pieces[3]
+local found, foundDistance = PuzzleTable.pieceAt(probe, { x = target.pos.x, y = target.pos.y })
+Harness.equal(
+	(found :: PuzzleTable.Piece).id,
+	target.id,
+	"pieceAt menemukan potongan yang tepat di posisinya sendiri"
+)
+Harness.near(foundDistance, 0, "jarak ke potongan yang digenggam adalah nol")
+
+-- `cellContaining` menjawab "titik ini ada di dalam sel mana", berbeda dari
+-- `cellAt` yang mengukur jarak ke pusat sel.
+Harness.equal(
+	PuzzleTable.cellContaining(cells, { x = 0, y = 0 }),
+	{ col = 0, row = 0 },
+	"titik sudut kiri-atas meja ada di sel (0,0)"
+)
+Harness.equal(
+	PuzzleTable.cellContaining(cells, { x = 1, y = 1 }),
+	{ col = 1, row = 1 },
+	"titik tepat di batas antar sel masuk ke sel kanan-bawahnya"
+)
+Harness.equal(
+	PuzzleTable.cellContaining(cells, { x = 3.999, y = 3.999 }),
+	{ col = 3, row = 3 },
+	"titik di ujung meja masuk ke sel terakhir"
+)
+Harness.equal(
+	PuzzleTable.cellContaining(cells, { x = -4, y = -4 }),
+	{ col = 0, row = 0 },
+	"titik di luar meja dijepit ke sel tepi, bukan menghasilkan indeks negatif"
+)
+
+Harness.suite("PuzzleTable: cellCorner")
+
+-- Penempatan potongan di dunia mengacu ke sudut sel, sedangkan seluruh
+-- perhitungan snap memakai pusat sel. Konversi ini yang menjembatani keduanya.
+Harness.equal(
+	PuzzleTable.cellCorner(cells, { col = 0, row = 0 }),
+	{ x = 0, y = 0 },
+	"sudut sel pertama adalah titik asal meja"
+)
+Harness.equal(
+	PuzzleTable.cellCorner(cells, { col = 1, row = 1 }),
+	{ x = 0.25, y = 0.25 },
+	"sudut sel (1,1) pada grid 4x4 berada di seperempat bidang"
+)
+Harness.equal(
+	PuzzleTable.cellCorner(cells, { col = 3, row = 3 }),
+	{ x = 0.75, y = 0.75 },
+	"sudut sel terakhir pada grid 4x4 berada di tiga per empat bidang"
+)

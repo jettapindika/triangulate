@@ -185,6 +185,65 @@ function PuzzleTable.cellAt(board: Board, point: Vec2): (Cell, number)
 end
 
 --[[
+	Potongan terdekat dari sebuah daftar, beserta jaraknya dalam satuan sel.
+
+	Bentuk `Placed` sengaja lebih longgar daripada `Piece`: server memegang
+	`Piece` lengkap, sedangkan client hanya menerima `{ id, region, x, y,
+	placed }` lewat kabel (lihat `clientPayload`). Satu implementasi pencarian
+	terdekat untuk keduanya mencegah client dan server menjawab pertanyaan
+	"potongan mana yang digenggam" dengan aturan yang berbeda.
+]]
+export type Placed = {
+	id: string,
+	pos: Vec2,
+}
+
+function PuzzleTable.nearestPiece<T>(pieces: { T & Placed }, point: Vec2): (T?, number)
+	local best: T? = nil
+	local bestDistance = math.huge
+	for _, piece in pieces do
+		local dx = piece.pos.x - point.x
+		local dy = piece.pos.y - point.y
+		local distance = math.sqrt(dx * dx + dy * dy)
+		if distance < bestDistance then
+			best = piece
+			bestDistance = distance
+		end
+	end
+	return best, bestDistance
+end
+
+--[[
+	Potongan yang paling dekat dengan sebuah titik meja, dan jaraknya dalam
+	satuan sel.
+
+	Dipakai client untuk menjawab "potongan mana yang diangkat jari ini" saat
+	sebuah sentuhan dimulai. Keputusan ini memang milik client -- ia hanya
+	memilih apa yang digenggam -- sedangkan keputusan "apakah pelepasannya sah"
+	tetap di server lewat `applyDrop`.
+]]
+function PuzzleTable.pieceAt(state: State, point: Vec2): (Piece?, number)
+	local best, distance = PuzzleTable.nearestPiece(state.pieces, point)
+	return best :: Piece?, distance
+end
+
+--[[
+	Sel yang menaungi sebuah titik meja, dengan titik (0,0) sebagai sudut
+	kiri-atas.
+
+	Berbeda dari `cellAt`, yang mengukur jarak ke PUSAT sel dan dipakai untuk
+	keputusan snap, fungsi ini menjawab "titik ini ada di dalam sel mana" --
+	yang dibutuhkan saat menaruh potongan di dunia. Pemisahan ini disengaja:
+	mencampur keduanya membuat aturan snap ikut berubah setiap kali cara
+	menggambar berubah.
+]]
+function PuzzleTable.cellContaining(board: Board, point: Vec2): Cell
+	local col = math.clamp(math.floor(point.x), 0, board.cols - 1)
+	local row = math.clamp(math.floor(point.y), 0, board.rows - 1)
+	return { col = col, row = row }
+end
+
+--[[
 	Menyelesaikan posisi jatuh potongan menjadi keputusan penempatan.
 
 	Ini fungsi yang menentukan apakah sebuah drop "menempel": bila jarak titik
@@ -219,7 +278,12 @@ end
 	sebagai solusi". `piece.correct` yang menjawab yang kedua, dan itu tetap di
 	server.
 ]]
-function PuzzleTable.place(state: State, pieceId: string, cell: Cell?, lastLegal: Vec2): (State, boolean)
+function PuzzleTable.place(
+	state: State,
+	pieceId: string,
+	cell: Cell?,
+	lastLegal: Vec2
+): (State, boolean)
 	for _, piece in state.pieces do
 		if piece.id == pieceId then
 			if cell == nil then
@@ -307,13 +371,14 @@ end
 function PuzzleTable.clientPayload(state: State): { [string]: any }
 	local pieces: { { [string]: any } } = {}
 	for _, piece in state.pieces do
-		table.insert(pieces, {
+		local entry: { [string]: any } = {
 			id = piece.id,
 			region = piece.region,
 			x = piece.pos.x,
 			y = piece.pos.y,
 			placed = piece.placed,
-		})
+		}
+		table.insert(pieces, entry)
 	end
 	return {
 		puzzle_id = state.puzzle_id,
@@ -440,6 +505,46 @@ function PuzzleTable.gridFor(puzzleType: string): (number?, number?)
 		return nil, nil
 	end
 	return grid.cols, grid.rows
+end
+
+--[[
+	Membuat meja siap-main untuk sebuah tipe puzzle: ukuran grid dari
+	`gridFor`, potongan lengkap, lalu diacak dengan `rng`.
+
+	Mengembalikan `nil` bila tipe puzzle tidak dikenal. `nil` dipilih daripada
+	`error` karena pemanggilnya adalah pemuatan kasus: satu node bukti bertipe
+	baru tidak boleh menjatuhkan seluruh sesi tiga pemain -- pemanggil mencatat
+	dan melewatinya.
+]]
+function PuzzleTable.forPuzzle(
+	puzzleType: string,
+	puzzleId: string,
+	width: number,
+	height: number,
+	rng: () -> number
+): State?
+	local cols, rows = PuzzleTable.gridFor(puzzleType)
+	if cols == nil or rows == nil then
+		return nil
+	end
+
+	local board = PuzzleTable.newBoard(cols, rows, width, height)
+	local regions: { number } = {}
+	for index = 1, cols * rows do
+		table.insert(regions, index)
+	end
+	return PuzzleTable.scatter(PuzzleTable.newState(puzzleId, board, regions), rng)
+end
+
+--[[
+	Sudut kiri-atas sel `cell` pada bidang meja, ternormalisasi [0,1].
+
+	Dipakai glue client untuk menaruh potongan di dunia: penempatan mengacu ke
+	sudut sel, sedangkan seluruh perhitungan di modul ini memakai pusat sel. Satu
+	konversi di sini lebih murah daripada rumus yang disalin ke dua glue.
+]]
+function PuzzleTable.cellCorner(board: Board, cell: Cell): Vec2
+	return { x = cell.col / board.cols, y = cell.row / board.rows }
 end
 
 local function isFinite(value: number): boolean
