@@ -30,6 +30,7 @@ require("./accusation.spec")
 require("./telemetry.spec")
 require("./case-loader.spec")
 require("./npc.spec")
+require("./puzzle-table.spec")
 
 Harness.report()
 

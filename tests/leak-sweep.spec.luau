@@ -17,6 +17,7 @@ local Harness = require("./harness")
 
 local Net = require("../src/shared/Net")
 local CaseLoader = require("../src/shared/case/CaseLoader")
+local PuzzleTable = require("../src/shared/PuzzleTable")
 
 local gallery = serde.decode("json", fs.readFile("data/cases/gallery_01.json"))
 local load = CaseLoader.load(gallery, "seed-kebocoran")
@@ -83,6 +84,20 @@ local function payloadFor(view: string, role: string): { [string]: any }
 		}
 	elseif view == "accusation_options" then
 		return { suspects = gallery.suspects, motives = gallery.motives, methods = gallery.methods }
+	elseif view == "puzzle_state" then
+		-- Payload dirakit oleh builder yang sama yang dipakai server, supaya uji
+		-- ini benar-benar menguji apa yang menyeberang, bukan salinan tangan.
+		local board = PuzzleTable.newBoard(4, 4, 8, 8)
+		local puzzleState = PuzzleTable.newState("torn_doc:ev_schedule", board, { 0, 1, 2, 3 })
+		return PuzzleTable.clientPayload(puzzleState)
+	elseif view == "piece_placed" then
+		return {
+			piece_id = "torn_doc:ev_schedule:0",
+			x = 1.5,
+			y = 2.5,
+			placed = true,
+			accepted = true,
+		}
 	end
 
 	error(string.format("view %s belum punya payload uji", view))
@@ -111,9 +126,14 @@ for view, byRole in Net.CLIENT_VIEWS do
 	end
 end
 
+-- 7 view awal x 3 role = 21, ditambah dua view meja puzzle yang hanya untuk
+-- Handler dan Director (PRD §4: meja milik Handler; §8: Director boleh
+-- mengambil alih puzzle manual di mode 2 pemain). Searcher tidak memegang meja
+-- sama sekali, jadi pasangannya sengaja tidak ada -- dan `Net.forRole`
+-- mengembalikan nil untuknya, yang berarti "jangan kirim".
 Harness.check(
-	pairsChecked == 21,
-	string.format("kebocoran: 7 view x 3 role tersapu (terperiksa: %d)", pairsChecked)
+	pairsChecked == 25,
+	string.format("kebocoran: 9 view x role tersapu (terperiksa: %d)", pairsChecked)
 )
 
 Harness.suite("kebocoran: kontrol detektor")
@@ -148,6 +168,40 @@ Harness.check(
 		"kontrol: tidak ada view yang mengizinkan field rahasia (%d masalah)",
 		#viewProblems
 	)
+)
+
+-- Kontrol khusus view meja puzzle: payload yang BENAR-BENAR berisi potongan
+-- harus lolos, dan payload yang disuntik field rahasia harus ketahuan. Tanpa
+-- dua assertion ini, `puzzle_state` bisa "bersih" hanya karena payloadnya
+-- kosong.
+local board = PuzzleTable.newBoard(4, 4, 8, 8)
+local puzzleState = PuzzleTable.newState("torn_doc:ev_schedule", board, { 0, 1, 2, 3 })
+local puzzlePayload = PuzzleTable.clientPayload(puzzleState)
+Harness.check(
+	#puzzlePayload.pieces == 4,
+	string.format("kontrol: payload meja membawa potongan (%d)", #puzzlePayload.pieces)
+)
+
+local cleanPuzzle = Net.forRole("puzzle_state", "Handler", puzzlePayload)
+Harness.check(
+	#Net.findSecrets(cleanPuzzle, "puzzle_state.Handler") == 0,
+	"kontrol: payload meja bersih dari field rahasia"
+)
+
+local dirtyPuzzle = {
+	puzzle_id = "torn_doc:ev_schedule",
+	cols = 4,
+	rows = 4,
+	pieces = puzzlePayload.pieces,
+	culprit = "curator",
+}
+Harness.check(
+	#Net.findSecrets(dirtyPuzzle, "puzzle.dirty") > 0,
+	"kontrol: payload meja yang disuntik rahasia memang terdeteksi detektor"
+)
+Harness.check(
+	#Net.findSecrets(Net.forRole("puzzle_state", "Handler", dirtyPuzzle), "puzzle") == 0,
+	"kontrol: field rahasia yang disuntik ke payload meja disaring"
 )
 
 return nil
