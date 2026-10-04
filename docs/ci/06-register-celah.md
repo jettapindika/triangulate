@@ -46,7 +46,7 @@ Yang paling mendesak bukan CI, melainkan **identitas tulis tunggal** (C-01) — 
 
 | | |
 |---|---|
-| Bukti | Saat potret: `gh api repos/.../actions/workflows` → `{"total_count": 0, "workflows": []}`; `gh api repos/.../actions/runners` → 0 runner; sebelas PR terbuka tanpa status check. Setelah PR #13 (EXTA-34) dibuka: workflow `CI` **terdaftar** (`total_count: 1`) dan satu run terpicu, tetapi `conclusion: skipped` dengan **keempat job `skipped`, `steps: 0`** karena repo variable `CI_ENABLED` tidak ada (`total_count: 0`). Rincian di `03-pipeline-ci.md` §4.7. |
+| Bukti | Saat potret: `gh api repos/.../actions/workflows` → `{"total_count": 0, "workflows": []}`; `gh api repos/.../actions/runners` → 0 runner; PR terbuka tanpa status check. Setelah PR #13 (EXTA-34) dibuka: workflow `CI` **terdaftar** (`total_count: 1`) dan **empat run** terpicu, semuanya `conclusion: skipped` dengan **keempat job `skipped`, `steps: 0`** karena repo variable `CI_ENABLED` tidak ada (`total_count: 0`). Sementara itu **empat PR (#10, #11, #14, #15) sudah di-merge ke `main` tanpa satu pun gate** — membuktikan bahwa ketiadaan gate punya konsekuensi nyata, bukan teoretis. Rincian di `03-pipeline-ci.md` §4.7. |
 | Dampak | Tidak ada sinyal otomatis apa pun sebelum merge. Kesalahan format, kode mati, dan kasus JSON yang tidak valid bisa masuk `main` tanpa terdeteksi. PRD §17 menargetkan playtest minggu 7 — tanpa CI, regresi baru ketahuan saat playtest. Workflow yang terdaftar tetapi selalu `skipped` tidak mengubah apa pun: ia hanya membuat PR menampilkan empat check berwarna abu-abu alih-alih "no checks", dan check abu-abu yang tidak pernah memeriksa justru bisa disalahbaca sebagai aman. |
 | Pemilik keputusan | Devan (draft) → Nathan — CTO/CIO (aktivasi) |
 | Usulan | Pipeline di `03-pipeline-ci.md`, dibuat inert lewat guard `vars.CI_ENABLED == 'true'` supaya tidak jalan sebelum owner mengaktifkan. **Aktivasi (`gh variable set CI_ENABLED --body true`) adalah satu-satunya langkah yang mengubah keadaan ini**, dan itu bukan tindakan Devan. |
@@ -111,7 +111,7 @@ Yang paling mendesak bukan CI, melainkan **identitas tulis tunggal** (C-01) — 
 
 | | |
 |---|---|
-| Bukti | `scripts/backup-repo.sh` dan `scripts/restore-drill.sh` ada dan sudah lolos uji end-to-end untuk repo (2026-10-04). Tidak ada jadwal otomatis: 0 workflow, 0 cron. DataStore Roblox dan `data/cases/` belum ada sehingga tidak bisa diuji sama sekali (`05-backup-restore.md` §2). |
+| Bukti | `scripts/backup-repo.sh` dan `scripts/restore-drill.sh` ada dan sudah lolos uji end-to-end untuk repo (2026-10-04). Tidak ada jadwal otomatis: workflow `CI` yang terdaftar masih inert dan tidak memuat langkah backup, 0 cron. DataStore Roblox belum ada sehingga tidak bisa diuji sama sekali; `data/cases/` kini **sudah ada** dan ikut tercakup jalur git (`05-backup-restore.md` §2). |
 | Dampak | Backup repo bergantung pada seseorang yang ingat menjalankan skrip. Aset yang paling mahal untuk hilang — state sesi + telemetri pemain (PRD §11, §12, §15) — belum punya backup dan belum bisa punya sampai ada kredensial Open Cloud. |
 | Pemilik keputusan | **ESKALASI →** Nathan — CTO/CIO (kredensial Open Cloud, penjadwalan) · Michelle — CFO kalau penyimpanan berbayar |
 | Usulan | Jadwalkan `backup-repo.sh` harian lewat cron lokal atau workflow terjadwal begitu CI aktif. DataStore menunggu kredensial Open Cloud. |
@@ -123,7 +123,7 @@ Yang paling mendesak bukan CI, melainkan **identitas tulis tunggal** (C-01) — 
 | | |
 |---|---|
 | Bukti | `gh api repos/...` → `delete_branch_on_merge: false`, `allow_merge_commit: true`, `allow_squash_merge: true`, `allow_rebase_merge: true`. |
-| Dampak | Branch `agent/<slug>/<hash>` menumpuk setelah PR merge (sudah 11 branch `agent/*` dari 11 PR terbuka). Tiga mode merge berarti riwayat `main` tidak konsisten antar PR. |
+| Dampak | Branch `agent/<slug>/<hash>` menumpuk setelah PR merge (`delete_branch_on_merge: false`; sudah 14 branch `agent/*` di remote). Tiga mode merge berarti riwayat `main` tidak konsisten antar PR. |
 | Pemilik keputusan | **ESKALASI →** Nathan — CTO/CIO |
 | Usulan | `delete_branch_on_merge: true`; sisakan squash saja. Perintah di `02-checklist-koneksi-repo.md` §3. |
 

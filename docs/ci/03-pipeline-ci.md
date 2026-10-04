@@ -7,50 +7,61 @@ Prasyarat: tidak satu pun perintah aktivasi di dokumen ini dijalankan. Workflow 
 
 Dokumen ini merancang pipeline GitHub Actions untuk repo `jettapindika/triangulate`, beserta berkas konfigurasi yang menyertainya. Seluruh perintah di dokumen ini sudah dijalankan sendiri pada 2026-10-04 di mesin kerja `ztvns-Mac.local`; exit code dilaporkan apa adanya. Yang tidak berhasil dijalankan ditandai `TIDAK TERVERIFIKASI`.
 
-Ringkas keadaan hari ini: repo punya **0 required status check**, dan `main` **tidak terproteksi** (`gh api repos/jettapindika/triangulate/branches/main/protection` → HTTP 404 `"Branch not protected"`). Sebelum branch PR ini di-push, `gh api repos/jettapindika/triangulate/actions/workflows` juga mengembalikan `total_count: 0`; setelah push, workflow **terdaftar** dan satu run terpicu dengan seluruh job `skipped` (§4.7). Jadi dokumen ini mengusulkan sesuatu yang belum berjalan, bukan mendokumentasikan yang sudah jalan.
+Ringkas keadaan hari ini: repo punya **0 required status check**, dan `main` **tidak terproteksi** (`gh api repos/jettapindika/triangulate/branches/main/protection` → HTTP 404 `"Branch not protected"`). Sebelum branch PR ini di-push, `gh api repos/jettapindika/triangulate/actions/workflows` juga mengembalikan `total_count: 0`; setelah push, workflow **terdaftar** dan run `pull_request` terpicu dengan seluruh job `skipped` (§4.7). Jadi dokumen ini mengusulkan sesuatu yang belum berjalan, bukan mendokumentasikan yang sudah jalan.
 
 ## 1. Status dan artinya
 
 | Pertanyaan | Jawaban |
 |---|---|
 | Apakah pipeline ini sudah berjalan? | **Belum.** Berkas workflow ada di repo, tetapi setiap job berguard `if: vars.CI_ENABLED == 'true'` dan repository variable `CI_ENABLED` **belum ada** (`gh api repos/.../actions/variables` → `{"total_count": 0}`). |
-| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati**, bukan lagi dugaan. Pada PR #13, GitHub mendaftarkan workflow dan memicu satu run `event: pull_request` yang selesai `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rinciannya di §4.7. |
+| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati pada dua run nyata**, bukan lagi dugaan. Run `37198053872` (`event: pull_request`, `head_sha: 05caefc`) dan run `37198920839` (`event: pull_request`, `head_sha: 5f33c74`) sama-sama `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rincian di §4.7. |
 | Apakah PR jadi terblokir? | **Tidak**, dan itu disengaja. Required status check belum dipasang (§5), jadi `skipped` tidak menghalangi merge. Ini mencegah pipeline baru memblokir PR-PR yang sudah terbuka saat workflow ini mendarat. |
 | Kapan ia mulai bekerja? | Setelah owner menjalankan satu perintah aktivasi di §5.1. |
 | Apakah ini "sudah ada CI"? | **Belum.** Yang ada adalah **usulan yang inert**. Sampai `CI_ENABLED` diset dan PR-nya di-merge, repo tetap tanpa CI. |
 
 ## 2. Berkas yang ditambahkan
 
-| Path | Isi | Pemilik |
-|---|---|---|
-| `.github/workflows/ci.yml` | Definisi 4 job: `lint`, `analyze`, `test`, `validate-case` | Devan (dokumen ini) |
-| `stylua.toml` | Konfigurasi formatter StyLua | Devan |
-| `selene.toml` | Konfigurasi linter selene | Devan |
-| `.luaurc` | Mode bahasa Luau `strict` + alias `shared`/`server`/`client` | Devan |
-| `rokit.toml` | Pin versi toolchain untuk workstation | Devan |
+| Path | Isi | Pemilik | Asal saat rebase |
+|---|---|---|---|
+| `.github/workflows/ci.yml` | Definisi 4 job: `lint`, `analyze`, `test`, `validate-case` | Devan (dokumen ini) | **baru** — tidak ada di `main` |
+| `.gitignore` | Blok bawaan `main` + `roblox.yml` + `sourcemap.json` + pola berkas secret | Devan | **gabungan** |
+| `selene.toml` | Konfigurasi linter selene (`std = "luau+roblox"` + `[lints]` milik `main`) | Devan | **gabungan** |
+| `rokit.toml` | Pin versi toolchain untuk workstation + `luau-lsp` | Devan | **gabungan** |
+| `scripts/backup-repo.sh`, `scripts/restore-drill.sh` | Backup dan uji restore repo | Devan | **baru** |
+| `docs/ci/01`–`06` | Enam dokumen ini | Devan | **baru** |
 
-Berkas `stylua.toml`, `selene.toml`, `.luaurc`, dan `rokit.toml` sengaja diletakkan di root repo supaya CI dan editor lokal memakai aturan yang sama — bukan dua set aturan yang menyimpang.
+`stylua.toml` dan `.luaurc` **tidak lagi dibawa PR ini**: keduanya diambil utuh dari `main` saat rebase ke `c25d062`, karena isi `main` sudah benar dan tidak ada satu pun setelan yang perlu ditambahkan EXTA-34. Alias `shared`/`server`/`client` yang dulu ada di draf `.luaurc` dibuang (lihat §2.1).
 
-`ASUMSI`: layout `src/shared`, `src/server`, `src/client` dan berkas `default.project.json` (Rojo) berasal dari scaffold EXTA-32 (Nathan — CTO/CIO). Dokumen ini merujuknya, tidak memilikinya. Bila EXTA-32 memilih layout lain, alias di `.luaurc` dan job `analyze` perlu disesuaikan.
+Berkas `selene.toml`, `rokit.toml`, dan `.gitignore` sengaja diletakkan di root repo supaya CI dan editor lokal memakai aturan yang sama — bukan dua set aturan yang menyimpang.
+
+`ASUMSI`: layout `src/shared`, `src/server`, `src/client` dan berkas `default.project.json` (Rojo) berasal dari scaffold EXTA-32 (Nathan — CTO/CIO), kini sudah mendarat di `main`. Dokumen ini merujuknya, tidak memilikinya.
 
 ### 2.1 Isi keputusan konfigurasi
 
 **`stylua.toml`** — `syntax = "All"`, `column_width = 100`, `line_endings = "Unix"`, `indent_type = "Tabs"`, `indent_width = 4`, `quote_style = "AutoPreferDouble"`, `call_parentheses = "Always"`, `collapse_simple_statement = "Never"`. Tab dipilih karena itu konvensi de-facto komunitas Luau/Roblox dan toolchain lain (Rojo, luau-lsp) tidak peduli.
 
-Nilai-nilai ini **disamakan dengan `stylua.toml` di branch EXTA-32** (scaffold `src/`, PR #11), karena EXTA-32 yang memiliki kode dan kodenya sudah terformat untuk lebar 100. Uji 2026-10-04 pada pohon EXTA-32: `stylua --config-path stylua.toml --check src tests` → **exit 0** dengan `column_width = 100`; dengan `column_width = 120` → **exit 1** (StyLua ingin menggabungkan baris yang muat dalam 120 kolom). Draf awal dokumen ini memakai 120 dan itu **salah** untuk repo ini.
+Nilai-nilai ini **disamakan dengan `stylua.toml` di `main`** (scaffold EXTA-32, PR #11, sudah mendarat), karena EXTA-32 yang memiliki kode dan kodenya sudah terformat untuk lebar 100. Uji 2026-10-04 pada pohon `main`: `stylua --config-path stylua.toml --check .` → **exit 0** dengan `column_width = 100`; dengan `column_width = 120` → **exit 1** (StyLua ingin menggabungkan baris yang muat dalam 120 kolom). Draf awal dokumen ini memakai 120 dan itu **salah** untuk repo ini.
 
-**`selene.toml`** — `std = "luau+roblox"`, `exclude = ["build/**", ".rojo/**"]`, plus `[lints]` dengan `shadowing = "allow"`, `multiple_statements = "deny"`, `unused_variable = "warn"`. `exclude` dan `multiple_statements = "deny"` diadopsi dari `selene.toml` EXTA-32; kode EXTA-32 lolos dengan keduanya.
+`stylua.toml` sekarang **milik `main` apa adanya** — PR ini tidak lagi membawanya. Isinya identik dengan nilai yang diuji di sini, jadi tidak ada yang perlu di-overlay saat rebase.
 
-Pemilihan `luau+roblox` **bukan** pilihan gaya, melainkan hasil pengujian: repo akan memuat dua gaya `require` sekaligus. `src/` memakai gaya Roblox (`require(ReplicatedStorage.Shared.Types)`), sedangkan `tests/` yang dijalankan lune memakai gaya path relatif (`require("../src/shared/clue_graph")`). Hasil uji:
+**`selene.toml`** — `std = "luau+roblox"`, `exclude = ["build/**", ".rojo/**"]`, plus `[lints]` dengan `shadowing = "allow"`, `multiple_statements = "deny"`, `unused_variable = "warn"`. Blok `[lints]` dan `exclude` milik `main` dipertahankan apa adanya; satu-satunya perubahan PR ini adalah **`std`: `roblox` → `luau+roblox`**, plus komentar.
 
-| std | `src/` gaya Roblox | `tests/` gaya Lune |
-|---|---|---|
-| `roblox` | lolos | `error[incorrect_standard_library_use]` |
-| `roblox+luau` | lolos | `error[incorrect_standard_library_use]` |
-| `luau` | `error[undefined_variable]: game is not defined` | lolos |
-| **`luau+roblox`** | **lolos** | **lolos** |
+Pemilihan `luau+roblox` **bukan** pilihan gaya, melainkan hasil pengujian, dan alasannya lebih sempit daripada yang tampak: repo memuat dua gaya `require` sekaligus. `src/` memakai gaya Roblox (`require(ReplicatedStorage.Shared.Types)`), sedangkan `tests/` dan `tools/` yang dijalankan lune memakai gaya path relatif (`require("../src/shared/Net")`) — 17 pemakaian di 13 berkas.
 
-Urutannya penting: `luau` harus di depan. `roblox+luau` menghasilkan error yang sama dengan `roblox` pada `require` gaya Lune.
+**Akar masalahnya adalah `roblox.yml`, bukan `std` itu sendiri.** `roblox.yml` adalah artefak turunan yang di-`.gitignore` dan dihasilkan `selene generate-roblox-std` dari API dump Roblox di jaringan. Selama `roblox.yml` dihasilkan oleh selene versi yang sama dengan yang menjalankan lint, `std = "roblox"` **juga** lolos 0 error. Yang gagal adalah kombinasi **`roblox.yml` yang tertinggal dari versi lain**: kedua berkas mendeklarasikan `require` dengan tipe berbeda — 0.28.0 menulis `args: [{type: number}]`, 0.32.0 menulis `args: [{type: any}]`. Dengan berkas 0.28.0, setiap `require` berargumen string dianggap salah tipe. Matriks yang saya ukur 2026-10-04 pada pohon hasil rebase (semua dengan `selene.toml` yang sama kecuali baris `std`):
+
+| `roblox.yml` | `std = "roblox"` | `std = "roblox+luau"` | `std = "luau+roblox"` |
+|---|---|---|---|
+| dari selene 0.28.0 (601707 B, `require: number`) | **53 error**, exit 1 | **53 error**, exit 1 | **0 error**, exit 0 |
+| dari selene 0.32.0 (760203 B, `require: any`) | 0 error, exit 0 | 0 error, exit 0 | 0 error, exit 0 |
+
+Ke-53 galat itu semuanya satu jenis: `error[incorrect_standard_library_use]: use of standard_library function 'require' is incorrect ... expected 'number', received 'string'`, tersebar di `src/shared/case/Compat.luau` dan seluruh `tests/*.spec.luau`. Hasilnya identik baik lint dijalankan oleh selene 0.32.0 maupun 0.28.0 — yang menentukan adalah **versi yang menghasilkan `roblox.yml`**, bukan versi yang melint.
+
+Kesimpulannya: `luau+roblox` adalah satu-satunya nilai yang **0 error di keempat kombinasi** (dua versi pembuat `roblox.yml` x dua versi lint). Karena `roblox.yml` diambil dari jaringan saat CI berjalan dan bisa datang dari API dump yang lebih baru daripada yang saya uji, ketahanan itu dibeli dengan satu baris konfigurasi. Urutan juga penting: `luau` harus di depan — `roblox+luau` berperilaku sama dengan `roblox` polos.
+
+`std = "luau"` polos ditolak: `game`, `workspace`, `Instance` menjadi `error[undefined_variable]` (85 error pada pohon ini), jadi `roblox` tetap wajib ada.
+
+Catatan operasional yang mengikuti dari temuan ini: **`roblox.yml` wajib dihasilkan ulang oleh selene versi yang dipin CI**, dan berkas itu tidak boleh di-commit atau dipakai ulang lintas versi. Job `lint` melakukan tepat itu (§3.2 langkah 6).
 
 Catatan lint tambahan, semuanya diuji ulang 2026-10-04 dengan selene **0.28.0 dan 0.32.0** (perilakunya identik di kedua versi):
 
@@ -62,7 +73,9 @@ Catatan lint tambahan, semuanya diuji ulang 2026-10-04 dengan selene **0.28.0 da
 
 Catatan untuk penulis uji: `assert(x)` dengan satu argumen memicu `error[incorrect_standard_library_use]: standard library function 'assert' requires 2 parameters, 1 passed` di bawah ketiga varian std (termasuk `luau` polos). Runner uji sebaiknya memakai pola counter + `error(string.format(...))`, bukan `assert` satu argumen.
 
-**`.luaurc`** — `languageMode: strict`, `aliases` (`shared` → `src/shared`, `server` → `src/server`, `client` → `src/client`), `lint: { "*": true }`, plus 18 entri `globals`. Alias dan `languageMode` berasal dari draf EXTA-34; `lint` dan `globals` diadopsi dari `.luaurc` EXTA-32 supaya tidak ada setelan yang hilang saat kedua PR digabung.
+**`.luaurc`** — `languageMode: strict`, `lint: { "*": true }`, plus 18 entri `globals`. **Seluruh isinya kini milik `main` apa adanya**; PR ini tidak lagi membawanya.
+
+Draf awal PR ini menambahkan `aliases` (`shared` → `src/shared`, `server` → `src/server`, `client` → `src/client`). Saat rebase ke `main` `c25d062`, alias itu **dibuang**, dengan bukti: `git grep 'require(' origin/main` menunjukkan tidak ada satu pun `require` bergaya alias di seluruh pohon `main` — semuanya `require(ReplicatedStorage.Shared.Config)` atau `require("../src/...")`. Alias tanpa pemakai adalah beban mati, jadi ia tidak dimasukkan ke `main`. Kalau nanti sebuah workstream mulai memakai gaya alias, itu perubahan terpisah dengan alasannya sendiri.
 
 Konsekuensi `strict` yang harus disadari: `strict` menandai `Unknown require` pada setiap `require` yang tidak bisa diresolusi luau-lsp. Karena itu job `analyze` **wajib** menjalankan `rojo sourcemap` lebih dulu (§3.3); tanpa sourcemap, luau-lsp gagal dengan `TypeError: Unknown require`.
 
@@ -73,9 +86,11 @@ Tentang `globals` — **diuji, dan hasilnya berlawanan dengan dugaan awal.** Ent
 - Repro minimal (2026-10-04): `local p = Instance.new("Part"); local n: number = p.Name` → dengan `--definitions` dan **tanpa** entri `Instance` di `globals` → `TypeError: Expected this to be 'number', but got 'string'` (benar, tertangkap). Dengan `Instance` ditambahkan ke `globals` → **0 galat** (kesalahan tipe lolos).
 - Definisi dari `--definitions` tetap **wajib**: tanpanya, luau-lsp mencetak `WARNING: --platform is set to 'roblox' but no definitions files are provided`.
 
-Pada pohon EXTA-32 + EXTA-34 hari ini, daftar `globals` itu **tidak mengubah jumlah galat**: dengan `globals` maupun tanpa, `luau-lsp analyze` melaporkan 8 galat yang sama (galatnya soal union tipe lokal, bukan anggota API Roblox). Daftar ini dipertahankan karena berasal dari EXTA-32 dan menghapusnya tidak memberi manfaat terukur sekarang; tetapi ia perlu **dipangkas** saat galat tipe di `src/` dibereskan (§3.5), supaya pemeriksaan tipe Roblox kembali tajam.
+Pada pohon `main` `c25d062` (yang sudah memuat `src/` EXTA-32) hari ini, daftar `globals` itu **tidak mengubah jumlah galat**: dengan `globals` maupun tanpa, `luau-lsp analyze` melaporkan 8 galat yang sama (galatnya soal union tipe lokal, bukan anggota API Roblox). Daftar ini dipertahankan karena berasal dari EXTA-32 dan menghapusnya tidak memberi manfaat terukur sekarang; tetapi ia perlu **dipangkas** saat galat tipe di `src/` dibereskan (§3.5), supaya pemeriksaan tipe Roblox kembali tajam.
 
-**`rokit.toml`** — format entri wajib `owner/repo@versi`. Bentuk tanpa pemisah `@` (mis. `StyLua = "2.5.2"`) ditolak dengan `WARN ... missing '@' separator`. Tag ditulis apa adanya: StyLua dan lune memakai awalan `v`, selene dan luau-lsp tidak. Isinya disamakan dengan EXTA-32, ditambah satu tool `luau-lsp` yang dibutuhkan job `analyze`.
+Klaim di atas **diuji ulang 2026-10-04 pada pohon `main` hasil rebase**, bukan diwarisi dari draf lama: repro minimal yang sama (`local p = Instance.new("Part"); local n: number = p.Name`) dengan `--definitions` tag `1.70.1` → `--base-luaurc` yang memuat `Instance` di `globals` memberi **exit 0 tanpa galat** (kesalahan tipe lolos), sedangkan `--base-luaurc` tanpa `Instance` memberi **exit 1** dengan `TypeError: Expected this to be 'number', but got 'string'` (tertangkap). Jadi `globals` memang masih melemahkan pemeriksaan tipe Roblox di `main`, dan `main` memang masih membawa daftar itu.
+
+**`rokit.toml`** — format entri wajib `owner/repo@versi`. Bentuk tanpa pemisah `@` (mis. `StyLua = "2.5.2"`) ditolak dengan `WARN ... missing '@' separator`. Tag ditulis apa adanya: StyLua dan lune memakai awalan `v`, selene dan luau-lsp tidak. Isinya **gabungan**: kunci dan urutan dari `main` (`rojo`, `stylua`, `selene`, `lune`) tetap apa adanya, ditambah satu baris `luau-lsp` yang dibutuhkan job `analyze`. Tidak ada versi yang diubah.
 
 ## 3. Toolchain dan langkah CI
 
@@ -92,7 +107,7 @@ Tidak ada `latest` di mana pun. Setiap versi dipin angka persis, arsipnya diveri
 | rojo | `v7.7.1` | `rojo-7.7.1-linux-x86_64.zip` | `00feb4fa0829a1dd72b49df2639da519a352bfe13cadcd83969e2ba2bb5693c4` |
 | Definisi Luau | tag `1.70.1` | `globalTypes.d.luau` | `2857efa8245485f8c25c19c018ee1ef9b46afab4efd2ea70fc3257cd3faf7080` |
 
-**Versi ini disamakan dengan `rokit.toml` di branch EXTA-32** (StyLua 2.5.2, selene 0.32.0, lune 0.10.5). Alasannya: dua PR yang mendarat dengan versi tool berbeda akan memformat dan melint dengan aturan berbeda, dan yang kalah adalah PR yang mendarat belakangan. Uji 2026-10-04 pada pohon gabungan EXTA-32 + EXTA-34: kode EXTA-32 lolos dengan ketiga versi baru ini (`stylua --check .` exit 0, `selene .` 0 errors / 0 warnings, `lune run tests/run.luau` 287 assertion lulus). Draf awal dokumen ini memakai 2.1.0 / 0.28.0 / 0.10.4 dan itu menghasilkan konflik dengan PR #11.
+**Versi ini disamakan dengan `rokit.toml` di `main`** (StyLua 2.5.2, selene 0.32.0, lune 0.10.5 — nilai yang sama dengan EXTA-32). Alasannya: dua PR yang mendarat dengan versi tool berbeda akan memformat dan melint dengan aturan berbeda, dan yang kalah adalah PR yang mendarat belakangan. Uji 2026-10-04 pada pohon `main` `c25d062` (yang sudah memuat `src/` EXTA-32): kode `main` lolos dengan ketiga versi ini (`stylua --check .` exit 0, `selene .` 0 errors / 0 warnings, `lune run tests/run.luau` **358 assertion lulus**). Draf awal dokumen ini memakai 2.1.0 / 0.28.0 / 0.10.4 dan itu menghasilkan konflik dengan PR #11.
 
 Alasan tiap tool dipakai:
 
@@ -114,7 +129,7 @@ Rantai `needs` sengaja berurutan, bukan paralel:
 lint ──needs──> analyze ──needs──> test ──needs──> validate-case
 ```
 
-Alasannya biaya: `lint` selesai dalam hitungan detik dan tidak butuh jaringan selain unduhan tool. `analyze` butuh unduhan definisi 851 KB dan lebih lambat. `test` menjalankan kode. `validate-case` bergantung pada validator milik EXTA-33. Kalau keempatnya paralel, PR dengan satu spasi salah format tetap menagih menit keempat job. Dengan rantai, kegagalan termurah membatalkan sisanya lebih awal.
+Alasannya biaya: `lint` selesai dalam hitungan detik dan tidak butuh jaringan selain unduhan tool. `analyze` butuh unduhan definisi 851 KB dan lebih lambat. `test` menjalankan kode. `validate-case` membaca seluruh `data/cases/*.json`. Kalau keempatnya paralel, PR dengan satu spasi salah format tetap menagih menit keempat job. Dengan rantai, kegagalan termurah membatalkan sisanya lebih awal.
 
 `concurrency` dengan `cancel-in-progress: true` membatalkan run lama saat branch yang sama di-push lagi.
 
@@ -149,9 +164,14 @@ Definisi Luau diunduh dari **tag `1.70.1`**, bukan `main`. Tag `main` menghasilk
 
 Langkah `luau-lsp analyze` memakai `continue-on-error: true` **untuk sementara**. Alasannya di §3.5: `src/` milik EXTA-32 masih menyisakan galat tipe nyata di bawah `languageMode: strict`, dan PR ini bukan pemilik berkas itu.
 
-**Job `test`** — `lune run tests/run.luau`. Berkas ini belum ada; langkahnya dijaga `hashFiles('tests/run.luau') != ''`.
+**Job `test`** — `lune run tests/run.luau`. Runner sudah ada di `main` (mendarat bersama PR #11); pada pohon `main` `c25d062` ia melaporkan **358 assertion, 0 gagal** (§4.6). Guard `hashFiles('tests/run.luau') != ''` dipertahankan bukan karena berkasnya mungkin hilang, melainkan agar pipeline tidak merah pada branch yang belum menyentuh `tests/`.
 
-**Job `validate-case`** — `lune run tools/validate-case.luau`. Berkas ini milik **EXTA-33** (Nathan — CTO/CIO), PR #10. Job ini hanya menyiapkan jalur masuknya; tidak ada validator yang ditulis di sini.
+**Job `validate-case`** — `lune run tools/validate_case.luau -- data/cases/*.json`. Berkas validator mendarat di `main` bersama PR #10 (EXTA-33, Nathan — CTO/CIO); nama berkasnya bergaris bawah, bukan `validate-case.luau`. Job ini memanggil validator **nyata** atas berkas kasus nyata; ia tidak menulis validator sendiri.
+
+Dua detail yang membuat job ini benar-benar memeriksa sesuatu:
+
+- `shopt -s nullglob` plus guard panjang array: tanpa itu, `data/cases/*.json` yang tidak cocok akan diteruskan sebagai literal ke lune, dan job akan "hijau" karena memvalidasi nama berkas yang tidak ada.
+- Job ini **hanya** memvalidasi `data/cases/*.json`, **bukan** `tests/fixtures/`. Ketiga fixture di sana adalah kasus negatif yang memang harus ditolak (§4.6).
 
 ### 3.3 Guard `hashFiles` dan `vars`
 
@@ -161,7 +181,7 @@ Aturan yang tidak boleh dilanggar: **`hashFiles` tidak tersedia di `jobs.<job_id
 |---|---|---|
 | `vars.CI_ENABLED == 'true'` | job | Menjaga seluruh pipeline tetap inert sebelum aktivasi |
 | `hashFiles('src/**/*.luau') != ''` | step | `hashFiles` tidak boleh di `jobs.<job_id>.if` |
-| `hashFiles('tools/validate-case.luau') != ''` | step | idem |
+| `hashFiles('tools/validate_case.luau') != ''` | step | idem |
 | `hashFiles('tests/run.luau') != ''` | step | idem |
 | `hashFiles('default.project.json') != ''` | step | idem |
 
@@ -184,7 +204,7 @@ Konsekuensinya: sebelum `src/` ada, job `analyze` tetap **hijau** dan menulis `:
 
 ### 3.5 Galat tipe `luau-lsp` pada `src/` (milik EXTA-32) — kenapa `analyze` sementara non-blocking
 
-Pada pohon gabungan EXTA-32 + EXTA-34, `luau-lsp analyze` menemukan **8 galat tipe nyata** di `src/`. Semuanya sudah ada di `src/` milik **EXTA-32** (Nathan — CTO/CIO, PR #11) dan **tidak** disebabkan konfigurasi PR ini.
+Pada pohon `main` `c25d062` (dan pada pohon hasil rebase), `luau-lsp analyze` menemukan **8 galat tipe nyata** di `src/`. Semuanya sudah ada di `src/` milik **EXTA-32** (Nathan — CTO/CIO, PR #11, sudah mendarat) dan **tidak** disebabkan konfigurasi PR ini.
 
 Diukur 2026-10-04, `luau-lsp 1.70.1`, definisi tag `1.70.1`, `rojo sourcemap` lebih dulu:
 
@@ -216,7 +236,7 @@ Karena itu langkah `analyze` memakai `id: analyze` + `continue-on-error: true`, 
 **Syarat melepas `continue-on-error`:**
 
 1. Kedelapan galat di tabel di atas beres di `src/` (EXTA-32 atau penerusnya).
-2. `luau-lsp analyze … src` keluar **exit 0** pada pohon gabungan.
+2. `luau-lsp analyze … src` keluar **exit 0** pada pohon `main`.
 3. Daftar `globals` di `.luaurc` dipangkas dari nama API Roblox (`Instance`, `game`, `workspace`, `Enum`, `Vector3`, …) — nama-nama itu sudah datang bertipe dari `--definitions`, dan mendeklarasikannya ulang sebagai global membuatnya `any` sehingga pemeriksaan tipe Roblox mati (§2.1).
 4. Setelah itu, hapus `continue-on-error: true`, hapus langkah `Laporkan galat tipe`, dan tambahkan `analyze` ke required check `main` (urutan aktivasi gate: CI dulu, proteksi branch kemudian — lihat `02-checklist-koneksi-repo.md`).
 
@@ -237,6 +257,8 @@ Seluruh pengujian dijalankan pada layout tiruan realistis di `/tmp/ci-repo/` (`s
 | 5 | `luau-lsp analyze --definitions=... --sourcemap=sourcemap.json --base-luaurc=.luaurc src` | **0** | `Loading Luau configuration from /private/tmp/ci-repo/.luaurc` |
 | 6 | `lune run tests/run.luau` | **0** | `PASS 2` |
 | 7 | `lune run tools/validate-case.luau` | **0** | `validasi kasus: OK` |
+
+Baris 7 di atas adalah validator **tiruan** di layout uji; validator nyata belum ada saat pengukuran itu. Validator sebenarnya mendarat bersama PR #10 (EXTA-33) sebagai `tools/validate_case.luau` (garis bawah), dan hasil finalnya ada di §4.6.
 
 Pada repo nyata (root `triangulate`, hanya berisi dokumentasi): `stylua --config-path stylua.toml --check .` → **EXIT=0**; `selene --config selene.toml .` → `0 errors / 0 warnings / 0 parse errors`, **EXIT=0**.
 
@@ -318,11 +340,11 @@ rojo       ERROR Resource temporarily unavailable (os error 35)
 
 Kegagalan ini milik lingkungan mesin ini (sandbox proses), bukan kesalahan format `rokit.toml` — `rokit list` membaca kelima entri tanpa keluhan. Pekerjaan di sesi ini karena itu memakai binary di `/tmp/ci-tools/`, dan CI tidak memakai `rokit` sama sekali (ia mengunduh aset rilis langsung dengan checksum). Ini bagian dari `06-register-celah.md` C-04, **ESKALASI →** Nathan — CTO/CIO.
 
-### 4.6 Uji end-to-end pada pohon gabungan EXTA-32 + EXTA-34
+### 4.6 Uji end-to-end pada pohon `main` hasil rebase
 
-Tujuan uji ini: membuktikan bahwa **konfigurasi final PR ini tidak merusak kode EXTA-32**, dan bahwa rantai CI lolos pada pohon yang sebenarnya akan ada setelah kedua PR mendarat. Pohon uji = `git archive` dari branch EXTA-32 (`agent/nathan-cto-cio/62ee7feb5e5a`), lalu keempat berkas config PR ini + `.gitignore` + `.github/workflows/ci.yml` di-overlay. Toolchain: StyLua 2.5.2, selene 0.32.0, lune 0.10.5, rojo 7.7.1, luau-lsp 1.70.1.
+Tujuan uji ini: membuktikan bahwa **konfigurasi final PR ini tidak merusak kode yang sudah ada**, dan bahwa rantai CI lolos pada pohon yang sebenarnya akan ada setelah PR ini mendarat. Pohon uji = `git archive` dari HEAD branch PR (`5f33c74`, sudah di-rebase ke `main` `c25d062`), jadi ia memuat `src/` (EXTA-32, PR #11), `tests/` + `tools/` (EXTA-33, PR #10), `data/cases/` (EXTA-38) dan seluruh config final PR ini sekaligus. Toolchain: StyLua 2.5.2, selene 0.32.0, lune 0.10.5, rojo 7.7.1, luau-lsp 1.70.1.
 
-Seluruh tabel ini **diukur ulang 2026-10-04 setelah konfigurasi dibekukan** (pohon segar dari `git archive`, lima berkas di-overlay dari isi final PR ini). Langkah 1–5 memakai perintah persis seperti di `.github/workflows/ci.yml`; langkah 6 memakai baris `luau-lsp analyze` yang sama tanpa tambahan flag.
+Seluruh tabel ini **diukur ulang 2026-10-04 pada pohon hasil rebase** (bukan lagi layout tiruan). Langkah 1–5 memakai perintah persis seperti di `.github/workflows/ci.yml`.
 
 | # | Perintah | Exit | Output |
 |---|---|---|---|
@@ -330,12 +352,19 @@ Seluruh tabel ini **diukur ulang 2026-10-04 setelah konfigurasi dibekukan** (poh
 | 2 | `selene generate-roblox-std` | **0** | `roblox.yml` 760203 byte |
 | 3 | `selene --config selene.toml .` | **0** | `0 errors / 0 warnings / 0 parse errors` |
 | 4 | `rojo sourcemap default.project.json --output sourcemap.json` | **0** | `Created sourcemap at sourcemap.json` |
-| 5 | `lune run tests/run.luau` | **0** | `287 assertion, 0 gagal` / `SEMUA LULUS` |
-| 6 | `luau-lsp analyze … src` | **1** | 8 galat tipe di `src/` — lihat §3.5 |
+| 5 | `lune run tests/run.luau` | **0** | `358 assertion, 0 gagal` / `SEMUA LULUS` |
+| 6 | `lune run tools/validate_case.luau -- data/cases/gallery_01.json` | **0** | `status: LULUS` / `HASIL: 1 file lulus.` |
+| 7 | `luau-lsp analyze … src` | **1** | 8 galat tipe di `src/` — lihat §3.5 |
 
-Langkah 1–5 hijau, jadi keputusan penyelarasan versi (§3.1) dan penggabungan `.luaurc` (§2.1) **tidak** merusak apa pun. Langkah 6 merah karena galat bawaan EXTA-32; itulah dasar `continue-on-error: true` di §3.5.
+Langkah 1–6 hijau, jadi keputusan penyelarasan versi (§3.1), `std = "luau+roblox"` (§2.1) dan `.luaurc` milik `main` **tidak** merusak apa pun. Langkah 7 merah karena galat bawaan EXTA-32; itulah dasar `continue-on-error: true` di §3.5. Kedelapan galatnya persis: `NPCController.luau:53`, `CaseLoader.luau:152`, dan `init.server.luau:135,189,197,224,505,522` — semuanya di `src/server/`.
 
-Kontrol negatif untuk langkah 1: `stylua --check .` dengan `column_width = 120` pada pohon yang sama → **exit 1**. Jadi `column_width = 100` bukan selera, melainkan nilai yang membuat kode EXTA-32 lolos.
+Kontrol negatif, ketiganya benar-benar memicu jalur merah:
+
+- `stylua --check .` dengan `column_width = 120` pada pohon yang sama → **exit 1**. Jadi `column_width = 100` bukan selera, melainkan nilai yang membuat kode yang ada lolos.
+- `lune run tools/validate_case.luau -- tests/fixtures/cycle.json` → **exit 1**, `HASIL: 1 dari 1 file gagal.`, temuan `[graph.dead_end]` untuk kedua node siklus. Fixture di `tests/fixtures/` memang kasus negatif, dan itulah alasan job `validate-case` hanya menyasar `data/cases/*.json`.
+- `selene --config selene.toml .` dengan `std = "roblox"` dan `roblox.yml` tertinggal dari selene 0.28.0 → **exit 1**, 53 galat. Matriksnya di §2.1.
+
+Dua angka yang bergerak sejak pengukuran awal dan karena itu disebut eksplisit: `roblox.yml` dari 0.28.0 adalah 601707 byte, dari **0.32.0 adalah 760203 byte**; dan jumlah assertion runner uji naik dari 287 (pohon gabungan awal) menjadi **358** pada pohon hasil rebase. Keduanya bukan nilai tetap.
 
 ### 4.7 Guard inert teramati pada PR nyata (bukan lagi asumsi)
 
@@ -356,6 +385,37 @@ Dua konsekuensi yang perlu dicatat:
 
 1. **Angka `actions/workflows` bergerak.** Nilainya `1` selama branch PR ini ada, dan akan kembali `0` bila branch dihapus tanpa merge. Karena itu `01-inventaris-repo-environment.md` mencatat `total_count: 0` sebagai potret **sebelum** push, dan itu tidak salah — hanya beda waktu.
 2. **Workflow terdaftar bukan berarti CI aktif.** Yang aktif adalah *pendaftaran* workflow; eksekusinya masih nol. "CI jalan" baru benar setelah `CI_ENABLED` diset dan ada job dengan `conclusion: success`.
+
+#### 4.7.1 Anomali "run hilang" — PR konflik menahan trigger
+
+Selama beberapa jam, tiga push berturut-turut ke branch PR ini (`12e5f7c`, lalu `e1716b2`) **tidak menghasilkan satu pun run `pull_request`**, padahal workflow sudah terdaftar dan aktif. Run terakhir yang terlihat masih menunjuk commit lama. Ini sempat terlihat seperti bug workflow. Ternyata bukan — penyebabnya adalah PR dalam keadaan konflik.
+
+Rantai buktinya:
+
+| Langkah | Perintah | Hasil |
+|---|---|---|
+| 1 | push `12e5f7c`, lalu `e1716b2` ke branch PR | **0 run baru** |
+| 2 | `gh workflow run CI --ref <branch>` pada `e1716b2` | run `37198646901` **terpicu** (juga `37198702395`) — jadi workflow-nya sehat dan ref-nya valid |
+| 3 | `gh pr view 13 --json mergeStateStatus` | `DIRTY` — PR tidak bisa di-merge |
+| 4 | `git merge-tree --write-tree origin/main HEAD` | **exit 1**, 5 berkas konflik |
+| 5 | rebase ke `origin/main` `c25d062`, selesaikan 5 konflik, push `5f33c74` | `gh pr view 13` → `MERGEABLE` / `CLEAN`; run `37198920839` muncul **4 detik** setelah push |
+
+Mekanismenya: GitHub menjalankan workflow `pull_request` pada **merge commit sementara** (`refs/pull/13/merge`), bukan pada head branch. Selama PR konflik, merge commit itu tidak bisa dibentuk, sehingga trigger ditahan — `workflow_dispatch` tetap jalan karena ia menargetkan ref branch langsung. Setelah konflik selesai, trigger kembali normal dengan sendirinya.
+
+Konsekuensi praktis: **workflow `pull_request` yang tidak terpicu pada PR yang sedang konflik bukan tanda konfigurasi salah.** Periksa `mergeStateStatus` sebelum menelusuri workflow. Ini juga alasan kedua mengapa rebase dipilih daripada sekadar merge: PR harus bisa di-merge supaya CI dinilai terhadap pohon yang nyata.
+
+Satu bagian yang **TIDAK TERVERIFIKASI**: run `37198053872` (`head_sha 05caefc`) terpicu pada 11:14 UTC, ketika `main` sudah bergerak melewati commit basis PR. Saya tidak dapat menjelaskan mengapa run itu masih muncul pada saat PR sudah tidak lagi mergeable; yang bisa saya pastikan hanya bahwa run-run sesudahnya berhenti sampai rebase selesai. Yang memverifikasi: perilaku ini tidak berdampak pada hasil akhir, karena keempat job-nya `skipped` dan setelah rebase trigger kembali normal.
+
+Keempat run yang ada saat itu, semuanya `conclusion: skipped` dengan `steps: 0`:
+
+| Run id | event | `head_sha` | jobs |
+|---|---|---|---|
+| `37198053872` | `pull_request` | `05caefc` | 4 job `skipped`, `steps: 0` |
+| `37198646901` | `workflow_dispatch` | `e1716b2` | 4 job `skipped`, `steps: 0` |
+| `37198702395` | `workflow_dispatch` | `e1716b2` | 4 job `skipped`, `steps: 0` |
+| `37198920839` | `pull_request` | `5f33c74` | 4 job `skipped`, `steps: 0` |
+
+Dua run `workflow_dispatch` adalah **tindakan Devan** saat menelusuri anomali di atas, bukan bukti CI berjalan. Keduanya juga `skipped` karena `CI_ENABLED` tetap kosong.
 
 ## 5. Gate sebelum merge
 
@@ -405,7 +465,7 @@ gh api --method PUT repos/jettapindika/triangulate/branches/main/protection \
 JSON
 ```
 
-`validate-case` sengaja **tidak** dimasukkan ke `contexts` karena job itu bergantung pada berkas milik EXTA-33 yang belum ada. Memasukkan check yang belum pernah hijau akan memblokir semua merge. Tambahkan setelah validator mendarat.
+`validate-case` sengaja **tidak** dimasukkan ke `contexts`. Validatornya sudah ada, tetapi job ini **belum pernah hijau di runner nyata** — seluruh eksekusinya sejauh ini `skipped` (`TIDAK TERVERIFIKASI` pada `ubuntu-latest`, §3.4). Memasang required check yang belum pernah muncul akan memblokir semua merge sampai ada satu run hijau; tambahkan setelah itu terbukti.
 
 Catatan penting soal `analyze`: selama `continue-on-error: true` masih terpasang (§3.5), job `analyze` **selalu** selesai dengan status sukses — galat tipe muncul sebagai anotasi `::warning::`, bukan sebagai kegagalan job. Jadi mencantumkannya di `contexts` sekarang tidak berbahaya (tidak akan pernah memblokir), tetapi juga **belum memberi gerbang tipe apa pun**. `analyze` baru benar-benar bergerbang setelah syarat di §3.5 dipenuhi. Kalau owner ingin `contexts` mencerminkan gerbang yang nyata hari ini, isi saja `["lint", "test"]`.
 
@@ -439,7 +499,7 @@ Konsekuensi yang mengikat siapa pun yang menyunting `ci.yml` nanti:
 
 ## 6. Lampiran — bukti mentah
 
-Blok-blok di bawah adalah keluaran **apa adanya** dari pengukuran **pertama** (2026-10-04, layout tiruan `/tmp/ci-repo/`, toolchain 2.1.0 / 0.28.0 / 0.10.4, `stylua.toml` draf). Angka versi dan ukuran di sini **bukan** konfigurasi final — nilai final ada di §3.1 (versi terpin), §4.4 (aset rilis) dan §4.6 (pengukuran ulang pada pohon gabungan). Lampiran ini dipertahankan karena ia bukti bahwa jalur merah benar-benar dipicu, bukan dikarang.
+Blok-blok di bawah adalah keluaran **apa adanya** dari pengukuran **pertama** (2026-10-04, layout tiruan `/tmp/ci-repo/`, toolchain 2.1.0 / 0.28.0 / 0.10.4, `stylua.toml` draf). Angka versi dan ukuran di sini **bukan** konfigurasi final — nilai final ada di §3.1 (versi terpin), §4.4 (aset rilis) dan §4.6 (pengukuran ulang pada pohon hasil rebase). Lampiran ini dipertahankan karena ia bukti bahwa jalur merah benar-benar dipicu, bukan dikarang. Satu nama di dalamnya sudah usang: validator dijalankan sebagai `tools/validate-case.luau` pada draf itu, sedangkan berkas yang benar-benar mendarat bernama `tools/validate_case.luau` (garis bawah).
 
 ```
 $ cd /tmp/ci-repo && stylua --config-path stylua.toml --check .
@@ -525,14 +585,14 @@ Repo `jettapindika/triangulate` **private**, jadi menit Actions dihitung terhada
 | Tidak tercakup | Sebab |
 |---|---|
 | Verifikasi perilaku runtime Roblox | Tidak ada Roblox Studio di runner; `game`, `DataStoreService`, dan `TeleportService` tidak ada di luar Roblox |
-| Server-authoritative sebagai sifat yang teruji (PRD §15) | CI hanya memeriksa tipe dan lint. Bahwa state kasus/solusi benar-benar tidak terekspos ke client adalah sifat arsitektur, bukan sesuatu yang bisa dibuktikan linter. Yang memverifikasi: review PR EXTA-32/EXTA-33 dan uji manual di Studio |
+| Server-authoritative sebagai sifat yang teruji (PRD §15) | CI hanya memeriksa tipe dan lint. Bahwa state kasus/solusi benar-benar tidak terekspos ke client adalah sifat arsitektur, bukan sesuatu yang bisa dibuktikan linter. Yang memverifikasi: review PR EXTA-32 dan EXTA-33 (keduanya sudah merged) dan uji manual di Studio |
 | Perilaku mobile kelas bawah (PRD §15, §18 "puzzle blur di mobile") | Butuh perangkat nyata; ini spike minggu 0 (PRD §17), bukan CI. Tidak ada emulator Roblox di runner |
 | Resolusi tekstur dan `ImageRectOffset`/`ImageRectSize` | idem — butuh Studio dan perangkat |
 | Telemetri per role (PRD §15, §11–§12) | Skema dan pengiriman event belum ada; tidak ada yang bisa diuji |
 | Deploy / publish place ke Roblox | Tidak ada workflow rilis dan tidak ada `ROBLOX_OPEN_CLOUD_API_KEY` (`04-manajemen-secret.md` §2). Pipeline ini hanya memeriksa, tidak merilis |
 | Backup dan restore | Milik `05-backup-restore.md` dan `scripts/backup-repo.sh`, bukan pipeline ini. CI ini tidak menjadwalkan apa pun |
 | Manajemen secret | Milik `04-manajemen-secret.md`. Workflow ini hanya memakai `GITHUB_TOKEN` bawaan dengan `permissions: contents: read` |
-| Validator skema kasus | Milik EXTA-33 (Nathan — CTO/CIO), PR #10, calon lokasi `tools/validate-case.luau`. Job `validate-case` hanya menyediakan jalur masuknya |
+| Validator skema kasus | Milik EXTA-33 (Nathan — CTO/CIO), PR #10 — sudah mendarat sebagai `tools/validate_case.luau`. Job `validate-case` memanggilnya atas `data/cases/*.json` |
 | Layout `src/` dan `default.project.json` | Milik EXTA-32 (Nathan — CTO/CIO). Dokumen ini mengasumsikan layoutnya dan merujuknya |
 | Perbaikan celah apa pun | Batas peran: diusulkan, bukan dijalankan. Lihat `06-register-celah.md` |
 | Angka menit dan biaya konkret | Butuh plan GitHub; lihat §7 |

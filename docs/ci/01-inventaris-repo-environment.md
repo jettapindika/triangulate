@@ -14,30 +14,35 @@ Semua baris di bawah adalah hasil perintah yang benar-benar dijalankan pada **20
 | Registry repo workspace | **kosong** (`[]`) | `multica repo list --output json` |
 | CI berjalan | **tidak ada.** Saat pembacaan awal: 0 workflow terdaftar. Sejak branch EXTA-34 (PR #13) di-push 2026-10-04, workflow `CI` terdaftar (`total_count: 1`) tetapi seluruh job `skipped` — jadi yang bertambah hanya pendaftaran, bukan eksekusi | `gh api repos/jettapindika/triangulate/actions/workflows`, `.../actions/runs` |
 | Branch protection / ruleset | **tidak ada** — `main` terbuka untuk push langsung | `gh api repos/.../branches/main/protection` → HTTP 404 |
-| Tinjauan berbasis PR | 11 PR terbuka, **belum ada yang di-merge**; tidak ada review yang diwajibkan | `gh pr list --state all`, `gh api repos/.../branches/main/protection` |
+| Tinjauan berbasis PR | 11 PR terbuka, **4 sudah di-merge** (#10, #11, #14, #15); tidak ada review yang diwajibkan | `gh pr list --state all`, `gh api repos/.../branches/main/protection` |
 | Secret di repo | 0 repo secret, 0 repo variable | `gh api repos/.../actions/secrets`, `.../variables` |
 | Toolchain Luau di workstation | **tidak terpasang** (`stylua`, `selene`, `luau-lsp`, `rojo`, `lune` → not found) | `which` |
 | Runtime agent | 7 terdaftar `online`; 20 agent semuanya terikat ke satu runtime | `multica runtime list`, `multica agent list` |
 
 Konsekuensi yang harus dinyatakan jujur: **belum ada satu pun operasi CI/CD yang berjalan.** Yang ada di issue ini adalah kesiapan + standar, bukan operasi harian yang boleh diklaim sudah jalan. Ini sejalan dengan batas peran Devan di `exta-infra-runbook` §2.
 
-Alur kerja PR **sudah terbukti jalan** (11 PR terbuka dari 11 agent berbeda, semuanya menargetkan `main`), tetapi **belum ada yang menegakkan apa pun**: tidak ada review wajib, tidak ada status check, tidak ada proteksi branch. PR hari ini adalah usulan murni — persis seperti yang diminta EXTA-31 — dan tetap begitu sampai gate di `02-checklist-koneksi-repo.md` diaktifkan.
+Alur kerja PR **sudah terbukti jalan** (11 PR terbuka dari agent berbeda, semuanya menargetkan `main`, dan 4 PR sudah di-merge), tetapi **belum ada yang menegakkan apa pun**: tidak ada review wajib, tidak ada status check, tidak ada proteksi branch. PR hari ini adalah usulan murni — persis seperti yang diminta EXTA-31 — dan tetap begitu sampai gate di `02-checklist-koneksi-repo.md` diaktifkan.
 
 ## 2. Inventaris repo
 
 | Repo | URL | Visibilitas | Default branch | Pemilik akses | Commit terakhir | Dibuat |
 |---|---|---|---|---|---|---|
-| triangulate | `https://github.com/jettapindika/triangulate` | private | `main` | `jettapindika` (admin, satu-satunya collaborator) | `5c5f59a` — "EXTA-31: bootstrap repo dengan PRD v0.2 dan struktur awal", 2026-10-04 17:08:23 +0700 | 2026-10-04T10:02:01Z |
+| triangulate | `https://github.com/jettapindika/triangulate` | private | `main` | `jettapindika` (admin, satu-satunya collaborator) | `c25d062` — ujung `main` setelah PR #10, #11, #14, #15 di-merge, 2026-10-04 | 2026-10-04T10:02:01Z |
 
 Perintah: `gh api repos/jettapindika/triangulate`, `gh api repos/jettapindika/triangulate/collaborators`, `gh pr list --repo jettapindika/triangulate --state all`.
 
-Isi repo saat ini (3 file, hasil `git ls-tree -r --name-only origin/main`):
+Isi repo saat ini (**54 file**, hasil `git ls-tree -r --name-only origin/main`), dikelompokkan:
 
 | Path | Isi | Pemilik |
 |---|---|---|
-| `README.md` | Judul proyek, penunjuk ke PRD dan EXTA-31 | bootstrap EXTA-31 |
-| `.gitignore` | `*.rbxl`, `*.rbxlx`, `*.rbxm`, `*.rbxmx`, `build/`, `.rojo/`, `*.lock`, `.DS_Store` | bootstrap EXTA-31 |
-| `docs/prd-v0.2.md` | PRD v0.2 lengkap | bootstrap EXTA-31 |
+| `README.md`, `docs/prd-v0.2.md` | Judul proyek dan PRD v0.2 lengkap | bootstrap EXTA-31 |
+| `.gitignore`, `stylua.toml`, `selene.toml`, `.luaurc`, `rokit.toml`, `default.project.json` | Konfigurasi toolchain dan proyek Rojo | EXTA-32 (PR #11) |
+| `src/shared/`, `src/server/`, `src/client/` | Kode game, server-authoritative | EXTA-32 (PR #11) |
+| `tests/`, `tools/validate_case.luau`, `schema/case.schema.json`, `data/cases/` | Runner uji (358 assertion), validator skema kasus, skema JSON, dan berkas kasus pertama | EXTA-33 (PR #10) |
+| `docs/arsitektur.md`, `docs/spike-minggu-0.md`, `docs/integrasi-stage-1.md` | Dokumen arsitektur, rencana spike, dan catatan integrasi stage 1 | EXTA-32 / EXTA-54 (PR #11, #14, #15) |
+| `docs/ci/` | Enam dokumen dan skrip PR ini | EXTA-34 |
+
+Bootstrap awal EXTA-31 hanya membawa 3 berkas (`README.md`, `.gitignore`, `docs/prd-v0.2.md`). Empat PR yang sudah di-merge membawa repo ke 54 berkas, jadi angka "3 file" pada potret awal tidak lagi berlaku.
 
 Setting repo yang relevan untuk gate merge (`gh api repos/jettapindika/triangulate`):
 
@@ -67,33 +72,35 @@ Artinya: perintah `multica repo list` **bukan** sumber kebenaran untuk "repo apa
 
 Perintah: `gh api "repos/jettapindika/triangulate/branches?per_page=100"`, `gh api "repos/.../commits?sha=<branch>"`, `gh pr list --state all --json number,title,state,headRefName,baseRefName`.
 
-Branch di remote (12 total, semuanya `protected: false`):
+Branch di remote (16 total, semuanya `protected: false`), potret **2026-10-04 11:35Z**:
 
 | Branch | Commit teratas | Dipakai issue | PR | Status |
 |---|---|---|---|---|
-| `main` | `5c5f59a` bootstrap EXTA-31 | — | — | tidak terproteksi, tidak ada CI |
+| `main` | `c25d062` (setelah 4 PR di-merge) | — | — | tidak terproteksi, tidak ada CI |
 | `agent/bima-automation-engineer/d01e413798e2` | `203478e` | EXTA-35 | **#8 OPEN** | menunggu review |
 | `agent/kirana-narrative-board-secreta/86bd31128b54` | `e62ce30` | EXTA-49 | **#9 OPEN** | menunggu review |
 | `agent/nadia-penulis-konten/278e0cc92537` | `afb2c55` | EXTA-38 | **#6 OPEN** | menunggu review |
-| `agent/nathan-cto-cio/29b1baaaf335` | `962b958` | EXTA-33 | **#10 OPEN** | menunggu review |
-| `agent/nathan-cto-cio/62ee7feb5e5a` | `327fe57` | EXTA-32 | **#11 OPEN** | menunggu review |
+| `agent/nathan-cto-cio/29b1baaaf335` | `962b958` | EXTA-33 | **#10 MERGED** | sudah di `main` |
+| `agent/nathan-cto-cio/62ee7feb5e5a` | `327fe57` | EXTA-32 | **#11 MERGED** | sudah di `main` |
 | `agent/rangga-decision-log-strategy-o/4e27c3c8182c` | `c8bc012` | EXTA-48 | **#7 OPEN** | menunggu review |
-| `agent/bagas-process-writer/f48895845f9e` | `f4c9e58` EXTA-47 perjelas klaim lokasi MVP | EXTA-47 | **#4 OPEN** | menunggu review |
-| `agent/bayu-pengawas-anggaran-risiko/111bb9f42fe8` | `c85c660` EXTA-44 register risiko | EXTA-44 | **#3 OPEN** | menunggu review |
-| `agent/clara-cmo/506861bc5a55` | `26568e0` EXTA-41 hapus klaim kadens konten | EXTA-41 | **#2 OPEN** | menunggu review |
-| `agent/dimas-pencatat-pengeluaran-har/068af65f3b7c` | `da96141` EXTA-45 template buku besar | EXTA-45 | **#1 OPEN** | menunggu review |
-| `agent/rani-data-metrics-engineer/98b3f96538b5` | `d4bb57c` EXTA-36 kamus metrik | EXTA-36 | **#5 OPEN** | menunggu review |
-| `agent/devan-infrastructure-runtime-e/bd869e15e75b` | `05caefc` EXTA-34 CI/CD + dokumen | EXTA-34 | **#13 OPEN** | branch kerja Devan |
+| `agent/bagas-process-writer/f48895845f9e` | `f4c9e58` | EXTA-47 | **#4 OPEN** | menunggu review |
+| `agent/bayu-pengawas-anggaran-risiko/111bb9f42fe8` | `c85c660` | EXTA-44 | **#3 OPEN** | menunggu review |
+| `agent/clara-cmo/506861bc5a55` | `26568e0` | EXTA-41 | **#2 OPEN** | menunggu review |
+| `agent/dimas-pencatat-pengeluaran-har/068af65f3b7c` | `da96141` | EXTA-45 | **#1 OPEN** | menunggu review |
+| `agent/rani-data-metrics-engineer/98b3f96538b5` | `d4bb57c` | EXTA-36 | **#5 OPEN** | menunggu review |
+| `agent/devan-infrastructure-runtime-e/bd869e15e75b` | `5f33c74` | EXTA-34 | **#13 OPEN** | branch kerja Devan |
+| `agent/sari-perancang-visual-presenta/d5e7c43b71f0` | `94d1211` | EXTA-39 | **#12 OPEN** | menunggu review |
+| `exta54-integrasi`, `exta54-doc-fix` | `d5d8e99`, `7837ae4` | EXTA-54 | **#14, #15 MERGED** | sudah di `main` |
 
-Base setiap PR: `main`. Merge: belum ada satu pun. Angka bergerak cepat — repo ini menerima PR baru dari workstream lain setiap beberapa menit, jadi tabel di atas adalah potret **2026-10-04 sekitar 10:30Z**, bukan nilai tetap. Pada akhir sesi kerja ini jumlahnya sudah bergerak dari **11 → 13** PR terbuka (EXTA-39 dan EXTA-34 masuk setelah potret), tetap **0 merged**. Karena itu setiap angka "11" di bawah ini berarti "11 pada potret itu", bukan keadaan sekarang.
+Base setiap PR: `main`. Angka bergerak cepat — repo ini menerima PR baru dari workstream lain setiap beberapa menit, jadi tabel di atas adalah potret **2026-10-04 11:35Z**, bukan nilai tetap. Yang penting untuk desain gate bukan jumlahnya, melainkan **empat PR sudah di-merge tanpa satu pun gate**: #10, #11, #14, #15 semuanya mendarat ke `main` tanpa required check, tanpa review wajib, dan tanpa proteksi branch.
 
 Yang terbaca dari data ini, dan relevan untuk desain gate:
 
-1. **Konvensi judul PR sudah benar tanpa dipaksa.** Kesebelas PR memakai prefiks `EXTA-<n>: ` — jadi aturan "judul PR memuat identifier issue" di `02-checklist-koneksi-repo.md` §4 bukan aturan baru, hanya formalisasi kebiasaan yang sudah jalan.
+1. **Konvensi judul PR sudah benar tanpa dipaksa.** Semua PR memakai prefiks `EXTA-<n>: ` — jadi aturan "judul PR memuat identifier issue" di `02-checklist-koneksi-repo.md` §4 bukan aturan baru, hanya formalisasi kebiasaan yang sudah jalan.
 2. **Loop revisi sudah hidup.** Beberapa branch (`bagas`, `clara`, `kirana`, `bima`, `rangga`) punya commit kedua yang isinya perbaikan ("perjelas klaim", "hapus klaim") — artinya review manusia memang terjadi, hanya lewat percakapan, bukan lewat mekanisme GitHub.
 3. **Tidak ada checks yang berjalan di PR mana pun.** Saat potret ini diambil, `gh api repos/.../actions/workflows` → `total_count: 0`, jadi PR GitHub menampilkan "no checks" — reviewer tidak punya sinyal otomatis apa pun. Setelah PR #13 dibuka, workflow `CI` terdaftar (`total_count: 1`) dan satu run terpicu, tetapi **keempat job-nya `skipped`** karena `CI_ENABLED` kosong (`03-pipeline-ci.md` §4.7). Jadi yang berubah hanyalah pendaftaran workflow; tetap belum ada check yang memeriksa apa pun.
 4. **Nama branch tidak memuat identifier issue.** Pola `agent/<slug-agent>/<12-hex-hash>` dibuat otomatis oleh `multica repo checkout`; hash-nya adalah id task, bukan nomor issue. Karena itu identifier **wajib** ada di judul PR — dan itu satu-satunya tempat ia bisa diandalkan.
-5. **Tidak ada satu pun merge.** 11 PR terbuka, 0 merged. Tanpa gate, tidak ada yang memaksa keputusan merge — dan tanpa CI, tidak ada sinyal untuk memutuskan.
+5. **Merge terjadi tanpa gate apa pun.** Empat PR (#10, #11, #14, #15) sudah di-merge ke `main` tanpa required check, tanpa review wajib, dan tanpa proteksi branch. Ini bukan kegagalan proses — gate-nya memang belum pernah dipasang. Tetapi ia menunjukkan konsekuensinya: tidak ada sinyal otomatis yang membedakan PR yang siap merge dari yang belum, dan `main` hari ini memuat kode yang belum pernah melewati CI.
 
 `ASUMSI`: hash 12-hex di nama branch adalah id task Multica (`bd869e15e75b` cocok dengan sufiks direktori task `exta-34-bd869e15e75b`). Yang memverifikasi: pemetaan ini konsisten untuk seluruh branch, tetapi tidak ada dokumentasi Multica yang menyatakannya secara eksplisit.
 

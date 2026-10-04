@@ -7,7 +7,7 @@ Prasyarat: tidak satu pun perintah di dokumen ini dijalankan sampai owner menyet
 
 Dokumen ini menjawab lima pertanyaan wajib dari `exta-infra-runbook` §2 sebelum repo dianggap "terhubung": remote & branch, siapa punya akses tulis, apa yang wajib hijau sebelum merge, apa yang berubah pada run agent begitu repo terhubung, dan siapa peninjau PR pertama.
 
-Repo sudah ter-checkout dan 11 PR sudah terbuka (0 merged), jadi sebagian pertanyaan sudah terjawab oleh keadaan. Bagian yang **belum** terjawab adalah gate-nya — dan itu isi utama dokumen ini.
+Repo sudah ter-checkout, 11 PR terbuka dan **4 sudah di-merge** (#10, #11, #14, #15), jadi sebagian pertanyaan sudah terjawab oleh keadaan. Bagian yang **belum** terjawab adalah gate-nya — dan itu isi utama dokumen ini.
 
 ## 0. Ringkasan jawaban
 
@@ -15,7 +15,7 @@ Repo sudah ter-checkout dan 11 PR sudah terbuka (0 merged), jadi sebagian pertan
 |---|---|---|
 | Remote dan branch mana | `https://github.com/jettapindika/triangulate`, branch `main` | terjawab |
 | Siapa punya akses tulis | `jettapindika` (admin, satu-satunya collaborator) | terjawab, **risiko**: akun pribadi tunggal |
-| Apa yang wajib hijau sebelum merge | **belum ada apa pun** — 0 required check, 0 proteksi | **usulan di §2–§3** |
+| Apa yang wajib hijau sebelum merge | **belum ada apa pun** — 0 required check, 0 proteksi, meski 4 PR sudah di-merge | **usulan di §2–§3** |
 | Apa yang berubah pada run agent begitu repo terhubung | sudah terhubung; yang berubah begitu **CI aktif**: menit Actions, akses token, dan kegagalan yang memblokir PR | **usulan di §5** |
 | Siapa peninjau PR pertama | `jettapindika` hari ini; kandidat kedua `Etzhyy` | **usulan di §4** |
 

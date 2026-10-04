@@ -64,7 +64,7 @@ curl --verbose --location POST 'https://apis.roblox.com/universes/v1/{universeId
 
 ### 3.1 `.gitignore`
 
-Isi `.gitignore` di `main` (commit `5c5f59a`) saat dokumen ini ditulis — 8 baris awal:
+Isi `.gitignore` di `main` (commit `5c5f59a`, bootstrap EXTA-31) saat dokumen ini ditulis — 8 baris awal:
 
 ```
 *.rbxl
@@ -259,7 +259,7 @@ Apa yang rusak kalau rotasi lupa di-update:
 
 Rotasi secret GitHub tidak punya langkah "kunci lama" terpisah: `gh secret set` menimpa nilainya. Karena itu, bila secret itu memetakan ke kunci Roblox, **rotasi di sisi Roblox dulu** (4.1), baru timpa secret-nya.
 
-Apa yang rusak kalau rotasi lupa di-update: workflow yang membaca secret itu akan menerima `401`/`403` dari Roblox pada run berikutnya. Karena repo ini belum punya workflow sama sekali, saat ini belum ada yang bisa rusak — justru inilah waktu yang tepat untuk menetapkan prosedurnya sebelum workflow pertama dibuat.
+Apa yang rusak kalau rotasi lupa di-update: workflow yang membaca secret itu akan menerima `401`/`403` dari Roblox pada run berikutnya. Karena workflow `CI` yang sudah terdaftar masih **inert** (`CI_ENABLED` kosong, seluruh job `skipped`), saat ini belum ada yang bisa rusak — justru inilah waktu yang tepat untuk menetapkan prosedurnya sebelum workflow pertama dibuat.
 
 ## 5. Pemetaan siapa memegang apa
 

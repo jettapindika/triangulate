@@ -8,16 +8,18 @@ Semua angka di dokumen ini berasal dari perintah yang benar-benar dijalankan pad
 
 ## 1. Ringkasan
 
-Satu-satunya aset yang **bisa** dicadangkan dan di-restore hari ini adalah repo git `jettapindika/triangulate`. Tiga aset lain yang PRD butuhkan — data kasus JSON (PRD §10), state sesi + telemetri Roblox DataStore (PRD §15, §11), dan konfigurasi secret — belum ada atau belum bisa diakses dari workstation ini, sehingga **belum ada satu pun yang bisa diuji restore-nya**. Itu dinyatakan apa adanya, bukan ditutupi prosedur teoretis.
+Aset yang **bisa** dicadangkan dan di-restore hari ini adalah repo git `jettapindika/triangulate`. Data kasus JSON (PRD §10) kini **sudah ada di repo** (`data/cases/gallery_01.json`, mendarat bersama PR #10) sehingga ikut tercakup jalur git; state sesi + telemetri Roblox DataStore (PRD §15, §11) dan konfigurasi secret masih belum bisa diakses dari workstation ini, sehingga **belum ada satu pun yang bisa diuji restore-nya**. Itu dinyatakan apa adanya, bukan ditutupi prosedur teoretis.
 
 Hasil uji restore nyata 2026-10-04:
 
 | Kriteria lulus | Manifest (sebelum backup) | Hasil restore | Status |
 | --- | --- | --- | --- |
-| SHA commit `main` | `5c5f59a7720f5d642871e124640e555485c95fc5` | `5c5f59a7720f5d642871e124640e555485c95fc5` | **identik** |
-| Jumlah file `main` | 3 | 3 | **identik** |
+| SHA commit `main` | `c25d062de55e288ffa7fa043612ce1b8b6152e5d` | `c25d062de55e288ffa7fa043612ce1b8b6152e5d` | **identik** |
+| Jumlah file `main` | 54 | 54 | **identik** |
 | `git bundle verify` | — | exit 0 | **sukses** |
-| SHA-256 bundle | `b03eedbcb692ee5b9668514d2d1ceaa325a9eee718d068e3faba03777362a6de` | cocok | **identik** |
+| SHA-256 bundle | `16a00215e310ff7c241c646b3e12bbe1de6c02c38cec406b610412e1f43f5608` | cocok | **identik** |
+
+Uji negatif juga dijalankan: bundle dikorupsi (satu byte ditambahkan) lalu drill diulang → `GAGAL: sha256 bundle berbeda`, **exit 1**. Jadi kriteria integritasnya benar-benar memicu, bukan sekadar tercetak.
 
 Kesimpulan: **LULUS**. Dua skrip disertakan dan sudah dijalankan end-to-end:
 
@@ -33,10 +35,10 @@ Kolom `Yang TIDAK tercakup` wajib terisi untuk setiap baris. Daftar cakupan tanp
 | Apa yang dicadangkan | Sumber | Jadwal usulan | Terakhir diuji | Kriteria lulus | Yang TIDAK tercakup |
 | --- | --- | --- | --- | --- | --- |
 | Repo git `jettapindika/triangulate` (semua ref) | `https://github.com/jettapindika/triangulate` (otoritatif) dan checkout worktree (cadangan) | Tiap push ke `main`; drill restore bulanan | **2026-10-04 — LULUS** | SHA `main` identik + jumlah file identik + `git bundle verify` exit 0 + SHA-256 bundle cocok manifest | Isu & PR GitHub, GitHub Actions log, branch protection/ruleset, wiki, release, LFS object, secret nilai, `.git` hook, konfigurasi repo, commit yang belum di-push |
-| Data kasus JSON (PRD §10: puzzle, clue, graf, briefing, solusi) | Belum ada di repo. `ASUMSI` lokasi usulan: `data/cases/*.json` — **belum diverifikasi, belum ada** | Tiap merge kasus baru; ikut backup repo | **BELUM ADA — tidak bisa diuji** | Setiap file lolos validator (calon lokasi `tools/validate-case.luau`, milik EXTA-33) + hash manifest cocok | Aset biner lokasi (`.rbxl`, `.rbxm` — di-ignore `.gitignore`), seed varian, terjemahan, riwayat seed daily case |
+| Data kasus JSON (PRD §10: puzzle, clue, graf, briefing, solusi) | **Sudah ada di repo**: `data/cases/gallery_01.json` (mendarat bersama PR #10), skema di `schema/case.schema.json` | Tiap merge kasus baru; ikut backup repo | **2026-10-04 — ikut restore** (bagian dari 54 file); validator `tools/validate_case.luau` atas `gallery_01.json` → `status: LULUS`, exit 0 | Setiap file lolos validator + hash manifest cocok | Aset biner lokasi (`.rbxl`, `.rbxm` — di-ignore `.gitignore`), seed varian, terjemahan, riwayat seed daily case, state sesi live yang tidak pernah ditulis ke berkas |
 | Roblox DataStore: state sesi/kasus + telemetri (PRD §15, §11, §12) | Roblox Open Cloud DataStore API — **belum dikonfigurasi, tanpa kredensial** | Harian setelah MVP punya data pemain | **BELUM ADA — tidak bisa diuji** | Snapshot per universe/store bisa dibaca ulang + jumlah entry cocok | `MemoryStoreService` (volatil), OrderedDataStore leaderboard, state sesi live (in-flight), data yang dihapus sebelum snapshot, PII di luar cakupan Roblox |
 | Konfigurasi secret (jumlah & **nama** kunci, BUKAN nilai — PRD §15 server-authoritative) | `gh api repos/jettapindika/triangulate/actions/secrets` dan `.../variables` | Tiap perubahan kunci; dicek di drill bulanan | **SEBAGIAN** — jumlah terverifikasi (0 repo secret, 0 repo variable); belum ada nilai untuk diuji | Jumlah & daftar nama kunci cocok dengan catatan inventaris | **Nilai secret tidak pernah dicadangkan** (dilarang); environment secret, Dependabot secret, secret runtime Multica, kredensial Roblox Open Cloud, riwayat rotasi |
-| Dokumen/PRD + issue Multica | `docs/prd-v0.2.md` (ikut repo) dan issue Multica via `multica issue list --output json` | Ikut tiap backup repo; ekspor issue bulanan | **2026-10-04** — PRD ikut restore (bagian dari 3 file); ekspor issue **berhasil** (52 issue, exit 0, dibaca ulang dengan `jq`) | PRD ada di hasil restore + hash cocok; ekspor issue bisa dibaca ulang + jumlah issue cocok catatan | Komentar & riwayat aktivitas issue, lampiran/artifact eksternal, agent/automation config, wiki, thread percakapan, state runtime Multica, issue yang dihapus permanen sebelum ekspor |
+| Dokumen/PRD + issue Multica | `docs/prd-v0.2.md` (ikut repo) dan issue Multica via `multica issue list --output json` | Ikut tiap backup repo; ekspor issue bulanan | **2026-10-04** — PRD ikut restore (bagian dari 54 file); ekspor issue **berhasil** (52 issue, exit 0, dibaca ulang dengan `jq`) | PRD ada di hasil restore + hash cocok; ekspor issue bisa dibaca ulang + jumlah issue cocok catatan | Komentar & riwayat aktivitas issue, lampiran/artifact eksternal, agent/automation config, wiki, thread percakapan, state runtime Multica, issue yang dihapus permanen sebelum ekspor |
 
 Untuk baris (3) dan (4) — apa yang dibutuhkan supaya bisa diuji:
 
@@ -74,15 +76,15 @@ bash scripts/backup-repo.sh
 `manifest.env` ditulis di tiap direktori backup. Contoh nyata dari run 2026-10-04T10:28:19Z (nilai apa adanya, tanpa perubahan):
 
 ```
-BACKUP_TS=20261004T102819Z
+BACKUP_TS=20261004T114340Z
 SOURCE=/Users/mac/multica_workspaces_desktop-api.multica.ai/exta-cc8280996e94/exta-34-bd869e15e75b/workdir/triangulate
 MAIN_REF=refs/heads/main
-MAIN_SHA=5c5f59a7720f5d642871e124640e555485c95fc5
-MAIN_FILES=3
-BUNDLE_BYTES=108390
-BUNDLE_SHA256=b03eedbcb692ee5b9668514d2d1ceaa325a9eee718d068e3faba03777362a6de
-BUNDLE_PATH=/tmp/triangulate-backup-final/20261004T102819Z/triangulate.bundle
-MIRROR_REFS=28
+MAIN_SHA=c25d062de55e288ffa7fa043612ce1b8b6152e5d
+MAIN_FILES=54
+BUNDLE_BYTES=5896599
+BUNDLE_SHA256=16a00215e310ff7c241c646b3e12bbe1de6c02c38cec406b610412e1f43f5608
+BUNDLE_PATH=/tmp/vb2/20261004T114340Z/triangulate.bundle
+MIRROR_REFS=40
 GIT_VERSION=git version 2.50.1 (Apple Git-155)
 ```
 
@@ -103,34 +105,32 @@ Kondisi sumber sebelum backup:
 
 ```bash
 git -C <repo> rev-parse origin/main
-# 5c5f59a7720f5d642871e124640e555485c95fc5
-git -C <repo> ls-tree -r --name-only origin/main
-# .gitignore
-# README.md
-# docs/prd-v0.2.md
+# c25d062de55e288ffa7fa043612ce1b8b6152e5d
+git -C <repo> ls-tree -r --name-only origin/main | wc -l
+# 54
 ```
+
+Drill ulang pada `main` `c25d062` (repo 54 file) — 2026-10-04:
 
 | Langkah | Perintah | Hasil | Durasi terukur |
 | --- | --- | --- | --- |
-| Backup penuh | `bash scripts/backup-repo.sh` | exit 0, `LULUS — main=5c5f59a... file=3` | 0.31–0.39 s (`time -p` real, seluruh run 2026-10-04) |
-| Drill restore | `bash scripts/restore-drill.sh` | exit 0, `LULUS` | 0.32–0.33 s (`time -p` real) |
-| Drill via `MIRROR_URL` GitHub | `MIRROR_URL=... bash scripts/backup-repo.sh` lalu drill | exit 0, `LULUS` | backup 2.43 s (termasuk mirror dari GitHub); drill 0.32 s |
-| Mirror dari GitHub | `git clone --mirror https://github.com/jettapindika/triangulate` | exit 0, SHA `main` identik | 1638 / 1550 / 1557 ms |
-| Bundle create | `git -C <mirror> bundle create <bundle> --all` | exit 0 | 151 / 141 / 141 ms |
-| Bundle verify | `git -C <mirror> bundle verify <bundle>` | exit 0, `is okay` | 87 / 100 / 96 ms |
-| Restore clone | `git clone <bundle> <dir>` | exit 0, `fatal` tidak ada | 135 / 165 / 111 ms |
+| Backup penuh | `bash scripts/backup-repo.sh` | exit 0, `LULUS — main=c25d062... file=54 bundle=5896599B` | 0.73–0.81 s (3 run) |
+| Drill restore | `bash scripts/restore-drill.sh` | exit 0, `LULUS: SHA main c25d062... dan 54 file identik dengan manifest` | 0.43 s (3 run) |
+| Uji negatif bundle dikorupsi | tambah 1 byte ke `triangulate.bundle`, drill ulang | `GAGAL: sha256 bundle berbeda`, exit **1** | 0.26 s |
 
-Ketiga run di atas diukur dengan pencatat milidetik di sekeliling perintah, bukan `time -p`. Angka ini hanya berlaku untuk repo 3 file hari ini.
+Potret awal repo (3 file, `main` `5c5f59a`) juga sudah diuji dan tetap tercatat: backup exit 0 `LULUS — main=5c5f59a... file=3` (0.31–0.39 s), drill exit 0 (0.32–0.33 s), drill via `MIRROR_URL` GitHub exit 0 (backup 2.43 s termasuk mirror dari GitHub), `git clone --mirror` dari GitHub 1638/1550/1557 ms, `bundle create` 151/141/141 ms, `bundle verify` 87/100/96 ms (`is okay`), restore clone 135/165/111 ms.
 
-Ukuran artefak **bervariasi antar run** karena repo sedang aktif diubah agen lain secara paralel; jumlah ref bergerak. Nilai nyata yang masih tersimpan dan terverifikasi pada 2026-10-04: bundle `61966` B (22 ref), `82317` B (25 ref), `84445` B (14 ref), `101383` B (19 ref), `108390` B (28 ref), `109179` B (28 ref); mirror `176`–`492` KB. Ini normal, bukan indikasi kerusakan — karena itu **jangan pakai ukuran bundle sebagai kriteria integritas**; pakai SHA-256 di manifest.
+Run awal itu diukur dengan pencatat milidetik di sekeliling perintah, bukan `time -p`.
+
+Ukuran artefak **bervariasi antar run** karena repo sedang aktif diubah agen lain secara paralel; jumlah ref bergerak. Nilai nyata yang terverifikasi pada 2026-10-04: pada potret 3 file bundle `61966` B (22 ref), `82317` B (25 ref), `84445` B (14 ref), `101383` B (19 ref), `108390` B (28 ref), `109179` B (28 ref); pada potret 54 file bundle `5896599` B dan `5896816` B (40 ref). Ini normal, bukan indikasi kerusakan — karena itu **jangan pakai ukuran bundle sebagai kriteria integritas**; pakai SHA-256 di manifest.
 
 ### 3.5 RTO dan RPO
 
 | Metrik | Nilai terukur | Dasar |
 | --- | --- | --- |
-| **RTO** (waktu pulih jalur git) | **0.31–0.39 s backup + 0.32–0.33 s drill**, jadi di bawah 1 s untuk repo 3 file | `time -p` pada run 2026-10-04 |
+| **RTO** (waktu pulih jalur git) | **0.73–0.81 s backup + 0.43 s drill** untuk repo 54 file; **0.31–0.39 s + 0.32–0.33 s** untuk repo 3 file | Diukur 2026-10-04 (kedua potret) |
 | **RPO** jalur git | **0 commit** | Setiap commit ada di remote GitHub; mirror menyalin semua ref |
-| Waktu `git clone --mirror` dari GitHub | 1.55–1.64 s (3 run); backup `MIRROR_URL` penuh 2.43 s | Diukur 2026-10-04 |
+| Waktu `git clone --mirror` dari GitHub | 1.55–1.64 s (3 run, potret 3 file); backup `MIRROR_URL` penuh 2.43 s | Diukur 2026-10-04 |
 
 Angka ini akan naik seiring pertumbuhan repo (aset, kasus, riwayat commit) dan **tidak boleh dipakai sebagai janji SLA**. Ukur ulang sebelum rilis minggu 8 (PRD §17).
 
