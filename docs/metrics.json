@@ -1,0 +1,99 @@
+{
+  "project": "Triangulate",
+  "prd": "docs/prd-v0.2.md",
+  "sections": ["§12", "§15"],
+  "owner_note": "Definisi angka milik Rani — Data & Metrics Engineer (EXTA-36). Berkas ini hanya memuat nama, target, dan arah pembanding dari PRD §12 supaya laporan terjadwal tidak menafsir. Jangan tambah rumus di sini sebelum EXTA-36 menetapkannya.",
+  "metrics": [
+    {
+      "id": "retention_d1",
+      "label": "Retensi D1",
+      "target": 0.18,
+      "direction": "gte",
+      "target_text": "18%"
+    },
+    {
+      "id": "retention_d7",
+      "label": "Retensi D7",
+      "target": 0.05,
+      "direction": "gte",
+      "target_text": "5%"
+    },
+    {
+      "id": "session_completion",
+      "label": "Penyelesaian sesi (menamatkan kasus)",
+      "target": 0.55,
+      "direction": "gte",
+      "target_text": "> 55%"
+    },
+    {
+      "id": "matchmaking_wait_median",
+      "label": "Median waktu tunggu matchmaking (detik)",
+      "target": 60,
+      "direction": "lte",
+      "target_text": "< 60 dtk"
+    },
+    {
+      "id": "matchmaking_fail_rate",
+      "label": "Sesi gagal start",
+      "target": 0.1,
+      "direction": "lte",
+      "target_text": "< 10%"
+    },
+    {
+      "id": "idle_time_per_role",
+      "label": "Idle time per role (bagian sesi)",
+      "target": 0.25,
+      "direction": "lte",
+      "target_text": "< 25% sesi"
+    },
+    {
+      "id": "case0_completion",
+      "label": "Penyelesaian Case 0",
+      "target": 0.8,
+      "direction": "gte",
+      "target_text": "> 80%"
+    },
+    {
+      "id": "quit_first_5min_per_role",
+      "label": "Quit di 5 menit pertama per role",
+      "target": null,
+      "direction": "track",
+      "target_text": "Dipantau, bandingkan antar role"
+    },
+    {
+      "id": "hint_per_session",
+      "label": "Rata-rata hint per sesi",
+      "target_low": 1,
+      "target_high": 2,
+      "direction": "band",
+      "target_text": "1-2"
+    },
+    {
+      "id": "new_story_case",
+      "label": "Story case baru",
+      "target": 1,
+      "direction": "gte",
+      "period_days": 14,
+      "target_text": "1 per 1-2 minggu"
+    }
+  ],
+  "events_required": {
+    "source": "PRD §15 — \"Telemetri: event per role (idle time, waktu ke clue pertama, tuduhan, quit point) sejak build pertama\"",
+    "owner": "Rani — Data & Metrics Engineer (EXTA-36)",
+    "required_events": [
+      "session_start",
+      "role_assigned",
+      "first_clue",
+      "evidence_completed",
+      "deduction_made",
+      "contradiction_marked",
+      "accusation_submitted",
+      "hint_used",
+      "idle_start",
+      "idle_end",
+      "session_end",
+      "case_released"
+    ],
+    "note": "Daftar di atas adalah usulan minimum EXTA-36; sampai EXTA-36 menetapkan skema final, laporan hanya boleh menyatakan 'belum ada data' untuk metrik yang butuh event ini."
+  }
+}
