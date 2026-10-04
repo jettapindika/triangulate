@@ -14,7 +14,7 @@ Ringkas keadaan hari ini: repo punya **0 required status check**, dan `main` **t
 | Pertanyaan | Jawaban |
 |---|---|
 | Apakah pipeline ini sudah berjalan? | **Belum.** Berkas workflow ada di repo, tetapi setiap job berguard `if: vars.CI_ENABLED == 'true'` dan repository variable `CI_ENABLED` **belum ada** (`gh api repos/.../actions/variables` → `{"total_count": 0}`). |
-| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati pada dua run nyata**, bukan lagi dugaan. Run `37198053872` (`event: pull_request`, `head_sha: 05caefc`) dan run `37198920839` (`event: pull_request`, `head_sha: 5f33c74`) sama-sama `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rincian di §4.7. |
+| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati pada tiga run nyata**, bukan lagi dugaan. Run `37198053872` (`event: pull_request`, `head_sha: 05caefc`), `37198920839` (`head_sha: 5f33c74`), dan `37199828835` (`head_sha: 5c51f9e`) semuanya `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rincian di §4.7. |
 | Apakah PR jadi terblokir? | **Tidak**, dan itu disengaja. Required status check belum dipasang (§5), jadi `skipped` tidak menghalangi merge. Ini mencegah pipeline baru memblokir PR-PR yang sudah terbuka saat workflow ini mendarat. |
 | Kapan ia mulai bekerja? | Setelah owner menjalankan satu perintah aktivasi di §5.1. |
 | Apakah ini "sudah ada CI"? | **Belum.** Yang ada adalah **usulan yang inert**. Sampai `CI_ENABLED` diset dan PR-nya di-merge, repo tetap tanpa CI. |
@@ -212,12 +212,12 @@ Diukur 2026-10-04, `luau-lsp 1.70.1`, definisi tag `1.70.1`, `rojo sourcemap` le
 |---|---|---|
 | 1 | `src/server/NPCController.luau:53,21` | `TypeError: Expected this to be 'string', but got 'T'` — tipe generik `T` dipakai sebagai indeks `{ [T]: boolean }` |
 | 2 | `src/server/CaseLoader.luau:152,15` | `TypeError: Unknown require: unsupported path` |
-| 3 | `src/server/init.server.luau:125,5` | `TypeError: Types RemoteEvent and nil cannot be compared with == because they do not have the same metatable` |
-| 4 | `src/server/init.server.luau:179,22` | `Expected this to be exactly 'PlayerRef', but got '{| id: any, isNew: boolean, preferences: {"Director" \| "Handler" \| "Searcher"}, recentRoles: {string} \|}'` |
-| 5 | `src/server/init.server.luau:187,47` | `Expected this to be exactly '{string}', but got '{"Director" \| "Handler" \| "Searcher"}'` |
-| 6 | `src/server/init.server.luau:214,48` | idem baris 5 |
-| 7 | `src/server/init.server.luau:495,26` | `Expected this to be exactly …` — `LobbyPlayer` vs `PlayerRef` |
-| 8 | `src/server/init.server.luau:512,26` | idem baris 7 |
+| 3 | `src/server/init.server.luau:135,5` | `TypeError: Types RemoteEvent and nil cannot be compared with == because they do not have the same metatable` |
+| 4 | `src/server/init.server.luau:189,22` | `Expected this to be exactly 'PlayerRef', but got '{| id: any, isNew: boolean, preferences: {"Director" \| "Handler" \| "Searcher"}, recentRoles: {string} \|}'` |
+| 5 | `src/server/init.server.luau:197,47` | `Expected this to be exactly '{string}', but got '{"Director" \| "Handler" \| "Searcher"}'` |
+| 6 | `src/server/init.server.luau:224,48` | idem baris 5 |
+| 7 | `src/server/init.server.luau:505,26` | `Expected this to be exactly …` — `LobbyPlayer` vs `PlayerRef` |
+| 8 | `src/server/init.server.luau:522,26` | idem baris 7 |
 
 Yang **bukan** penyebab, sudah diuji dan dikesampingkan:
 
@@ -342,9 +342,9 @@ Kegagalan ini milik lingkungan mesin ini (sandbox proses), bukan kesalahan forma
 
 ### 4.6 Uji end-to-end pada pohon `main` hasil rebase
 
-Tujuan uji ini: membuktikan bahwa **konfigurasi final PR ini tidak merusak kode yang sudah ada**, dan bahwa rantai CI lolos pada pohon yang sebenarnya akan ada setelah PR ini mendarat. Pohon uji = `git archive` dari HEAD branch PR (`5f33c74`, sudah di-rebase ke `main` `c25d062`), jadi ia memuat `src/` (EXTA-32, PR #11), `tests/` + `tools/` (EXTA-33, PR #10), `data/cases/` (EXTA-38) dan seluruh config final PR ini sekaligus. Toolchain: StyLua 2.5.2, selene 0.32.0, lune 0.10.5, rojo 7.7.1, luau-lsp 1.70.1.
+Tujuan uji ini: membuktikan bahwa **konfigurasi final PR ini tidak merusak kode yang sudah ada**, dan bahwa rantai CI lolos pada pohon yang sebenarnya akan ada setelah PR ini mendarat. Pohon uji = `git archive` dari HEAD branch PR (`5c51f9e`, sudah di-rebase ke `main` `c25d062`), jadi ia memuat `src/` (EXTA-32, PR #11), `tests/` + `tools/` + `data/cases/` (EXTA-33, PR #10) dan seluruh config final PR ini sekaligus. Toolchain: StyLua 2.5.2, selene 0.32.0, lune 0.10.5, rojo 7.7.1, luau-lsp 1.70.1.
 
-Seluruh tabel ini **diukur ulang 2026-10-04 pada pohon hasil rebase** (bukan lagi layout tiruan). Langkah 1–5 memakai perintah persis seperti di `.github/workflows/ci.yml`.
+Seluruh tabel ini **diukur ulang 2026-10-04 pada pohon hasil rebase** (bukan lagi layout tiruan). Langkah 1–7 memakai perintah persis seperti di `.github/workflows/ci.yml`.
 
 | # | Perintah | Exit | Output |
 |---|---|---|---|
@@ -354,9 +354,10 @@ Seluruh tabel ini **diukur ulang 2026-10-04 pada pohon hasil rebase** (bukan lag
 | 4 | `rojo sourcemap default.project.json --output sourcemap.json` | **0** | `Created sourcemap at sourcemap.json` |
 | 5 | `lune run tests/run.luau` | **0** | `358 assertion, 0 gagal` / `SEMUA LULUS` |
 | 6 | `lune run tools/validate_case.luau -- data/cases/gallery_01.json` | **0** | `status: LULUS` / `HASIL: 1 file lulus.` |
-| 7 | `luau-lsp analyze … src` | **1** | 8 galat tipe di `src/` — lihat §3.5 |
+| 7 | `lune run tools/validate_case.luau -- tests/fixtures/cycle.json` | **1** | `HASIL: 1 dari 1 file gagal.` / `[graph.dead_end]` |
+| 8 | `luau-lsp analyze … src` | **1** | 8 galat tipe di `src/` — lihat §3.5 |
 
-Langkah 1–6 hijau, jadi keputusan penyelarasan versi (§3.1), `std = "luau+roblox"` (§2.1) dan `.luaurc` milik `main` **tidak** merusak apa pun. Langkah 7 merah karena galat bawaan EXTA-32; itulah dasar `continue-on-error: true` di §3.5. Kedelapan galatnya persis: `NPCController.luau:53`, `CaseLoader.luau:152`, dan `init.server.luau:135,189,197,224,505,522` — semuanya di `src/server/`.
+Langkah 1–6 hijau, jadi keputusan penyelarasan versi (§3.1), `std = "luau+roblox"` (§2.1) dan `.luaurc` milik `main` **tidak** merusak apa pun. Langkah 7 adalah kontrol negatif yang memang harus merah. Langkah 8 merah karena galat bawaan EXTA-32; itulah dasar `continue-on-error: true` di §3.5. Kedelapan galatnya persis: `NPCController.luau:53`, `CaseLoader.luau:152`, dan `init.server.luau:135,189,197,224,505,522` — semuanya di `src/server/`.
 
 Kontrol negatif, ketiganya benar-benar memicu jalur merah:
 
@@ -406,7 +407,7 @@ Konsekuensi praktis: **workflow `pull_request` yang tidak terpicu pada PR yang s
 
 Satu bagian yang **TIDAK TERVERIFIKASI**: run `37198053872` (`head_sha 05caefc`) terpicu pada 11:14 UTC, ketika `main` sudah bergerak melewati commit basis PR. Saya tidak dapat menjelaskan mengapa run itu masih muncul pada saat PR sudah tidak lagi mergeable; yang bisa saya pastikan hanya bahwa run-run sesudahnya berhenti sampai rebase selesai. Yang memverifikasi: perilaku ini tidak berdampak pada hasil akhir, karena keempat job-nya `skipped` dan setelah rebase trigger kembali normal.
 
-Keempat run yang ada saat itu, semuanya `conclusion: skipped` dengan `steps: 0`:
+Kelima run yang tercatat sampai 2026-10-04 11:45Z, semuanya `conclusion: skipped` dengan `steps: 0`:
 
 | Run id | event | `head_sha` | jobs |
 |---|---|---|---|
@@ -414,8 +415,9 @@ Keempat run yang ada saat itu, semuanya `conclusion: skipped` dengan `steps: 0`:
 | `37198646901` | `workflow_dispatch` | `e1716b2` | 4 job `skipped`, `steps: 0` |
 | `37198702395` | `workflow_dispatch` | `e1716b2` | 4 job `skipped`, `steps: 0` |
 | `37198920839` | `pull_request` | `5f33c74` | 4 job `skipped`, `steps: 0` |
+| `37199828835` | `pull_request` | `5c51f9e` | 4 job `skipped`, `steps: 0` |
 
-Dua run `workflow_dispatch` adalah **tindakan Devan** saat menelusuri anomali di atas, bukan bukti CI berjalan. Keduanya juga `skipped` karena `CI_ENABLED` tetap kosong.
+Dua run `workflow_dispatch` adalah **tindakan Devan** saat menelusuri anomali di atas, bukan bukti CI berjalan. Keduanya juga `skipped` karena `CI_ENABLED` tetap kosong. Run `37199828835` muncul setelah commit dokumen terakhir di-push, jadi trigger `pull_request` memang kembali normal pasca-rebase.
 
 ## 5. Gate sebelum merge
 

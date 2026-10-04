@@ -137,7 +137,7 @@ Dua baris terakhir adalah temuan keamanan, bukan preferensi gaya: hari ini **tid
 
 ### 4.1 Konvensi judul PR
 
-Pola yang sudah jalan tanpa dipaksa (kesebelas PR terbuka memakainya):
+Pola yang sudah jalan tanpa dipaksa (seluruh PR — terbuka maupun yang sudah di-merge — memakainya):
 
 ```
 EXTA-<nomor>: <ringkasan imperatif, satu baris>
