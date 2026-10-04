@@ -49,13 +49,20 @@ src/shared/                 Direplikasi ke client. TIDAK BOLEH berisi rahasia.
   Roles.luau                Tiga role, rotasi, prioritas keadilan (§3, §8, §10)
   Net.luau                  Kontrak remote + proyeksi per role (§15)
   PingPhrases.luau          Frasa ping wheel per role (§7)
+  PuzzleTable.luau          Bentuk data meja puzzle (dipakai client dan server)
+  case/CaseGraph.luau       Graf ketergantungan: ketersediaan per varian (§4)
+  case/CaseLoader.luau      Memuat kasus dari data + seed
+  case/CaseValidator.luau   Validator graf kasus (satu jalur, tanpa siklus)
+  case/Compat.luau          Jembatan require lintas runtime (Roblox vs CLI)
 
 src/server/                 ServerScriptService. Tidak pernah direplikasi.
   init.server.luau          Titik masuk: guard, remote, sesi, handler, lobby
-  CaseLoader.luau           Memuat dan memvalidasi kasus (§10)
+  CaseLoader.luau           Memuat dan memvalidasi kasus dari ServerStorage (§10)
   ClueGraph.luau            Graf ketergantungan: ketersediaan, asiklik (§4)
   DeductionEngine.luau      Resep deduksi (§4)
   AccusationService.luau    Tuduhan, percobaan, rank (§5)
+  AccusationGate.luau       Gerbang tuduhan, kontradiksi, cleanup, rekap (§5)
+  PuzzleTableService.luau   Meja puzzle: pemasangan, progres (§4)
   RoleAssignment.luau       Penetapan role + prioritas keadilan (§8)
   Matchmaking.luau          Lobby, ready check, batas waktu (§8)
   NPCController.luau        Pengambilalihan AFK, aksi NPC (§8)
@@ -64,8 +71,9 @@ src/server/                 ServerScriptService. Tidak pernah direplikasi.
 src/client/                 StarterPlayerScripts.
   init.client.luau          Titik masuk client
   NetClient.luau            Binding remote; tiap remote punya fungsi bernama
-  Hud/init.luau             Kerangka HUD
+  Hud/init.luau             HUD: clue board, form tuduhan, rekap Cold Case
   Hud/PingWheel.luau        Ping wheel (§7)
+  Table/init.luau           Meja puzzle: drag-and-snap, kamera top-down (§4, §15)
 
 data/cases/                 Di-mount ke ServerStorage.Cases
   gallery_01.json           Kasus contoh "Lukisan yang Tertukar" (§4)
@@ -242,14 +250,15 @@ arsitektur, bukan sekadar niat desain.
 Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 `Instance`, `UDim2`, `Player`:
 
-`Config`, `Roles`, `Net`, `PingPhrases`, `RoleAssignment`, `Matchmaking`,
-`AccusationService`, `DeductionEngine`, `ClueGraph`, `TelemetryService`,
-`NPCController`, `CaseGraph`, `CaseValidator`, dan bagian murni `CaseLoader`
-(`pickVariant`, `shapeProblems`).
+`Config`, `Roles`, `Net`, `PingPhrases`, `PuzzleTable`, `LocationMap`,
+`RoleAssignment`, `Matchmaking`, `AccusationService`, `AccusationGate`,
+`DeductionEngine`, `ClueGraph`, `TelemetryService`, `NPCController`,
+`PuzzleTableService`, `CaseGraph`, `CaseValidator`, dan bagian murni
+`CaseLoader` (`pickVariant`, `shapeProblems`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 867 assertion berjalan dalam waktu di bawah satu
-detik (`tests/run.luau`, 18 berkas spec). Untuk game yang aturan menang-kalahnya
+Studio dan tanpa Roblox.** 967 assertion berjalan dalam waktu di bawah satu
+detik (`tests/run.luau`, 19 berkas spec). Untuk game yang aturan menang-kalahnya
 serumit PRD §5 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank
 S/A/B/C), itu perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio
 tiap kali".
@@ -261,6 +270,9 @@ sebagai `require`.** Contoh konkret:
   `game:GetService("ServerStorage")`.
 - `AccusationService.newSession(solution, fields, maxAttempts)` menerima angka,
   tidak `require` `Config`.
+- `AccusationGate.newSession(config, gateFn, now)` menerima aturan gerbang dan
+  jam sebagai argumen, jadi seluruh siklus tuduhan — gerbang, kontradiksi,
+  penalti cleanup, rekap — bisa dijalankan dari CLI.
 - `Matchmaking.join(lobby, player, config)` menerima config, tidak membacanya
   dari global.
 
@@ -272,7 +284,7 @@ bisa jalan.
 
 ## 6. RemoteEvent: dibuat kode, bukan Rojo
 
-`init.server.luau` membuat seluruh 18 RemoteEvent dari satu sumber:
+`init.server.luau` membuat seluruh 19 RemoteEvent dari satu sumber:
 `Net.REMOTE_NAMES`. Tidak ada remote di `default.project.json`.
 
 Alasannya: kalau remote didefinisikan dua kali (sekali di file project, sekali
@@ -291,7 +303,7 @@ Pembagiannya:
 | Arah | Jumlah | Nama |
 |---|---|---|
 | Server → client | 10 | `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult`, `PuzzleState`, `PiecePlaced`, `PingRelay` |
-| Client → server | 8 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece` |
+| Client → server | 9 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece`, `MarkContradiction` |
 
 `PingRelay` dan `SetTarget` adalah dua remote minggu 6. Keduanya ada karena
 `tests/net.spec.luau` menegaskan setiap remote punya **tepat satu** arah:
@@ -301,6 +313,11 @@ Pembagiannya:
 - `SetTarget` (client → server) ada karena PRD §7 menjadikan Target Marker
   aksi **Handler**, jadi harus berangkat dari client; server meneruskannya ke
   Searcher lewat `TargetMarker`.
+
+`MarkContradiction` (client → server) adalah remote minggu 4: PRD §4
+menjadikan penandaan Kontradiksi aksi **Director**, dan hanya Director yang
+memegang pernyataan saksi. Server memeriksa ulang kecocokan terhadap
+`contradicted_by` sebelum menerimanya — client tidak dipercaya.
 
 `NetClient` sengaja tidak menyediakan pengiriman payload bebas: tiap remote
 punya fungsi bernama (`NetClient.report`, `NetClient.deduce`, `NetClient.accuse`,
@@ -375,41 +392,53 @@ Semua perintah dijalankan dari akar repo.
 
 ### Sudah dibuktikan
 
-Semua perintah di bawah dijalankan pada commit `80b35e9` (kepala `main`),
-2026-10-04, dengan perintah yang **sama persis** dengan `.github/workflows/ci.yml`.
-Keluaran verbatim ada di `docs/rilis.md` bagian 1.
+Semua perintah di bawah dijalankan pada kepala branch EXTA-57, di atas
+`main` `06b6ef8`, 2026-10-04, dengan perintah yang **sama persis** dengan
+`.github/workflows/ci.yml`.
 
 | Perintah | Hasil |
 |---|---|
-| `lune run tests/run.luau` | **566 assertion, 0 gagal** — 15 berkas spec |
-| `selene --config selene.toml .` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
-| `stylua --config-path stylua.toml --check .` | **bersih** (exit 0) |
-| `luau-analyze --mode=strict` atas 13 modul murni | **0 diagnostik** |
-| `rojo build -o build-candidate.rbxlx` | **berhasil** — 200.771 byte |
-| `lune run tools/validate_case.luau -- data/cases/gallery_01.json` | **LULUS** — 0 errors, 0 warnings |
+| `lune run tests/run.luau` | **967 assertion, 0 gagal** — 19 berkas spec |
+| `selene --config selene.toml .` | **0 errors, 1 warning, 0 parse errors** |
+| `stylua --config-path stylua.toml --check .` | **6 berkas gagal** — semuanya pre-existing di `main` (lihat di bawah) |
+| `luau-analyze --mode=strict` atas 17 modul murni | **0 diagnostik** |
+| `rojo build -o build.rbxlx` | **berhasil** — 290.786 byte |
+| `lune run tools/validate_case.luau -- data/cases/*.json` | **LULUS** — 3 berkas, 0 errors, 0 warnings |
 
 Tabel ini dulu mencantumkan 358 assertion dan `selene src tests`; keduanya
-usang. Angka dan perintah di atas yang berlaku, dan `docs/rilis.md` bagian 1
-adalah sumber keluaran mentahnya.
+usang.
+
+Dua baris di atas sengaja tidak berbunyi "bersih", karena memang tidak:
+
+- **`selene`.** Satu warning `manual_table_clone` di `init.server.luau`
+  (`local payload: { [string]: any } = {}` lalu salin per kunci). Warning yang
+  sama persis sudah ada di `main` pada baris yang sama; EXTA-57 tidak
+  menambahnya.
+- **`stylua`.** Enam berkas gagal `--check`: `init.server.luau` dan lima spec.
+  Keenamnya sudah gagal di `main` (di sana ada tujuh — `src/client/Hud/init.luau`
+  ikut gagal, dan branch ini justru memperbaikinya). Perbaikan itu sengaja
+  **tidak** dikerjakan di sini: memformat ulang berkas milik pekerjaan lain akan
+  memunculkan diff besar yang tidak ada hubungannya dengan minggu 4.
 
 Hasil `rojo build` juga diperiksa isinya, bukan cuma status keluarnya. Pohon
 yang dihasilkan dari `default.project.json`:
 
 ```
 ReplicatedStorage.Shared          Folder
-  Config, Net, PingPhrases, PuzzleTable, Roles   ModuleScript
+  Config, LocationMap, Net, PingPhrases, PuzzleTable, Roles   ModuleScript
   case/                            Folder
     CaseGraph, CaseLoader, CaseValidator, Compat  ModuleScript
-ServerScriptService.Server         Script (9 ModuleScript anak)
-  AccusationService, CaseLoader, ClueGraph, DeductionEngine,
+ServerScriptService.Server         Script (10 ModuleScript anak)
+  AccusationGate, AccusationService, CaseLoader, ClueGraph, DeductionEngine,
   Matchmaking, NPCController, PuzzleTableService, RoleAssignment,
   TelemetryService
-ServerStorage.Cases.gallery_01     ModuleScript
+ServerStorage.Cases                Folder
+  case_00, gallery_01, kersana_01  ModuleScript
 StarterPlayer.StarterPlayerScripts.Client  LocalScript
   Hud/ (PingWheel), NetClient, Table          ModuleScript
 ```
 
-Total 23 `ModuleScript`, 1 `Script`, 1 `LocalScript`, 3 `Folder`. Tidak ada
+Total 27 `ModuleScript`, 1 `Script`, 1 `LocalScript`, 3 `Folder`. Tidak ada
 `rbxassetid` nyata di pohon ini: `Table.SHEET` masih `rbxassetid://0`, jadi
 place ini tidak akan menampilkan gambar puzzle sampai sheet-nya diunggah.
 
@@ -422,11 +451,13 @@ tetapi **bukan** `--definitions`. Jadi modul yang menyentuh `Instance`,
 dan `Unknown global`, bukan karena kodenya salah, tetapi karena tipe itu tidak
 ada di binary-nya.
 
-Karena itu batasnya saya nyatakan eksplisit: **13 modul murni bersih di bawah
+Karena itu batasnya saya nyatakan eksplisit: **17 modul murni bersih di bawah
 `--mode=strict`; sisanya (`init.server.luau`, `init.client.luau`, `NetClient`,
-`Hud/*`, dan bagian `Instance` di `CaseLoader`) tidak bisa diperiksa tipe oleh
-binary ini.** Untuk itu dibutuhkan `luau-lsp` dengan `sourcemap.json` dari
-`rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD), bukan scaffold ini.
+`Hud/*`, `Table/*`, dan bagian `Instance` di `CaseLoader`) tidak bisa diperiksa
+tipe oleh binary ini.** `shared/case/Compat.luau` juga tidak dihitung: ia
+ditandai `--!nocheck`, jadi "lulus" di sana bukan hasil pemeriksaan. Untuk
+modul yang menyentuh API Roblox dibutuhkan `luau-lsp` dengan `sourcemap.json`
+dari `rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD), bukan scaffold ini.
 
 **`rojo build` membuktikan struktur, bukan perilaku.** Tidak ada Roblox runtime
 di lingkungan ini, jadi tidak ada satu pun baris `init.server.luau` yang pernah

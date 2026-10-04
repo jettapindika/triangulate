@@ -50,6 +50,14 @@ local state: Hud.State = {
 	pendingConfirmation = nil,
 	marker = nil,
 	briefingTarget = nil,
+	gateOpen = nil,
+	keyDeductionsDone = nil,
+	keyDeductionsRequired = nil,
+	contradictionsMarked = nil,
+	contradictionsRequired = nil,
+	cleanupSecondsLeft = nil,
+	coldCaseRecap = nil,
+	accusationOptions = nil,
 }
 
 local hud = Hud.mount(player, state, {
@@ -72,10 +80,17 @@ local hud = Hud.mount(player, state, {
 		-- id itu ke benda di lokasi dan menghitung arah kompasnya.
 		NetClient.setTarget(bound, targetId)
 	end,
+	onAccuse = function(accusation: { [string]: string })
+		-- Gerbang ditampilkan di HUD; server tetap memeriksanya ulang
+		-- (`AccusationGate.admit`) dan menolak percobaan di luar gerbang tanpa
+		-- memakan jatah percobaan tim.
+		NetClient.accuse(bound, accusation)
+	end,
 })
 
--- Briefing per role (PRD §9). Payload ini sudah diproyeksikan server untuk role
--- pemain ini; field yang tidak ada di view-nya memang tidak dikirim.
+-- Briefing per role (PRD §9), status sesi (PRD §5, §6), dan kandidat form
+-- tuduhan (PRD §5). Ketiganya datang lewat remote yang sama, diproyeksikan
+-- server per role; client hanya memindahkan field yang ada ke `state`.
 bound.SessionState.OnClientEvent:Connect(function(payload: any)
 	if type(payload) ~= "table" then
 		return
@@ -91,6 +106,43 @@ bound.SessionState.OnClientEvent:Connect(function(payload: any)
 	-- melihat arah kompas. Disimpan agar tombol Tandai tahu apa yang dikirim.
 	if type(payload.target) == "string" then
 		state.briefingTarget = payload.target
+	end
+
+	-- PRD §5: kandidat isi form tuduhan. Ini daftar pilihan, bukan jawaban --
+	-- solusinya tetap hanya ada di server. Dikirim ke semua role, jadi formnya
+	-- baru muncul di layar Director (`Hud.mount` memutuskan itu dari
+	-- `state.role`).
+	if payload.suspects ~= nil or payload.motives ~= nil or payload.methods ~= nil then
+		state.accusationOptions = {
+			suspects = payload.suspects or {},
+			motives = payload.motives or {},
+			methods = payload.methods or {},
+		}
+	end
+
+	-- PRD §5, §6: progres gerbang, timer cleanup, dan rekap Cold Case. Field
+	-- yang tidak ada di proyeksi role ini memang tidak dikirim, jadi `nil`
+	-- berarti "role ini tidak memegangnya", bukan "belum sampai".
+	if payload.gate_open ~= nil then
+		state.gateOpen = payload.gate_open
+	end
+	if payload.key_deductions_done ~= nil then
+		state.keyDeductionsDone = payload.key_deductions_done
+	end
+	if payload.key_deductions_required ~= nil then
+		state.keyDeductionsRequired = payload.key_deductions_required
+	end
+	if payload.contradictions_marked ~= nil then
+		state.contradictionsMarked = payload.contradictions_marked
+	end
+	if payload.contradictions_required ~= nil then
+		state.contradictionsRequired = payload.contradictions_required
+	end
+	if payload.cleanup_seconds_left ~= nil then
+		state.cleanupSecondsLeft = payload.cleanup_seconds_left
+	end
+	if payload.cold_case_recap ~= nil then
+		state.coldCaseRecap = payload.cold_case_recap
 	end
 
 	-- Briefing awal dan pembaruan status datang lewat remote yang sama; yang

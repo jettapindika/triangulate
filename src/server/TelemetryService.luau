@@ -16,7 +16,19 @@
 
 local TelemetryService = {}
 
-export type EventKind = "input" | "clue" | "deduction" | "accusation" | "quit"
+-- `contradiction` dan `cold_case` ditambahkan minggu 4. Skema event EXTA-36
+-- (`docs/metrics/skema-event-telemetri.md` §3.2 dan §3.3) sudah memuat
+-- `contradiction_marked` dan status Cold Case; yang kurang hanya jenisnya di
+-- sini, karena jenis event adalah kontrak modul ini. Properti lengkap per
+-- event tetap pekerjaan exporter EXTA-36 -- `detail` di sini hanya penanda.
+export type EventKind =
+	"input"
+	| "clue"
+	| "deduction"
+	| "contradiction"
+	| "accusation"
+	| "cold_case"
+	| "quit"
 
 export type Event = {
 	kind: EventKind,

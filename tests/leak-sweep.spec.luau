@@ -61,8 +61,25 @@ local function payloadFor(view: string, role: string): { [string]: any }
 			chains = { { id = "A", done = false } },
 			deductions_done = 0,
 			key_deductions_required = gallery.key_deductions,
+			key_deductions_done = 0,
+			contradictions_marked = 0,
+			contradictions_required = 1,
+			gate_open = false,
+			cleanup_seconds_left = 90,
+			-- PRD §5: rekap Cold Case hanya berisi angka. Bentuk ini yang
+			-- dirakit `AccusationGate.recap`; kalau seseorang kelak menambahkan
+			-- daftar id node ke sini, `accusation-gate.spec.luau` yang menahan.
+			cold_case_recap = {
+				evidence_found = 3,
+				evidence_total = 6,
+				key_deductions_done = 1,
+				key_deductions_required = 4,
+				contradictions_marked = 0,
+				attempts_used = 3,
+			},
 			solution = solution,
 			culprit = solution.culprit,
+			key_deductions = gallery.key_deductions,
 		}
 	elseif view == "report_card" then
 		return {

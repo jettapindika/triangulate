@@ -43,6 +43,26 @@ Config.KEY_DEDUCTIONS = {
 -- PRD §5: minimal satu Kontradiksi harus ditandai sebelum form tuduhan terbuka.
 Config.MIN_CONTRADICTIONS = 1
 
+-- PRD §6: timer *cleanup* -- "pelaku menghapus satu bukti di lokasi jika tidak
+-- diambil dalam waktu tertentu. Timer dipercepat tiap tuduhan salah."
+--
+-- Angka dasar dan besar percepatannya adalah keputusan §19 yang ditetapkan
+-- untuk minggu 4: 90 detik, dikurangi 30 detik tiap tuduhan salah, dengan
+-- lantai 30 detik supaya tuduhan ketiga tidak menghabiskan sisa waktu seketika.
+-- Lantainya juga yang menjaga timer tetap bermakna setelah penalti berkali-kali.
+Config.CLEANUP_SECONDS = 90
+Config.CLEANUP_PENALTY_SECONDS = 30
+Config.CLEANUP_FLOOR_SECONDS = 30
+
+-- PRD §5: rank S/A/B/C dihitung dari waktu, jumlah tuduhan, dan hint terpakai.
+--
+-- ASUMSI: 900 detik (15 menit) sebagai anggaran waktu kasus standar -- batas
+-- atas sesi PRD §1 ("Sesi 15-30 menit"). Angka ini BUKAN dari PRD: skema data
+-- kasus belum punya `par_time_s` per (case_id, case_variant), jadi belum ada
+-- pembanding waktu nyata. Ambang rank baru divalidasi pada playtest minggu 7
+-- (PRD §19), dan angka ini ikut tunduk pada validasi yang sama.
+Config.RANK_BUDGET_SECONDS = 900
+
 -- PRD §6: batas idle time per role pada playtest.
 Config.MAX_IDLE_FRACTION = 0.25
 
