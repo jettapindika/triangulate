@@ -1,0 +1,64 @@
+{
+  "project": "Triangulate",
+  "parent_issue": "EXTA-31",
+  "prd": "docs/prd-v0.2.md",
+  "start_date": null,
+  "note": "start_date = tanggal (YYYY-MM-DD) Senin minggu 0. Diisi owner. Selama null, pengingat gate roadmap tidak dijalankan dan skrip berhenti dengan pesan eksplisit.",
+  "workstreams_note": "workstreams[] sengaja kosong: pemetaan minggu -> issue adalah milik COO (operating plan, EXTA-46), bukan milik otomasi ini. Selama kosong, skrip hanya melaporkan status board, bukan klaim kepemilikan.",
+  "weeks": [
+    {
+      "week": 0,
+      "target": "Spike teknis: resolusi gambar, replikasi drag di mobile, ping wheel prototipe",
+      "gate": "Drag halus di mobile, puzzle tidak blur",
+      "workstreams": []
+    },
+    {
+      "week": 1,
+      "target": "Meja puzzle top-down, drag-and-snap",
+      "gate": "Bisa selesai 1 puzzle di mobile",
+      "workstreams": []
+    },
+    {
+      "week": 2,
+      "target": "Loader kasus dari data, lokasi, objek + kunci",
+      "gate": "Satu rantai A->bukti jalan end to end",
+      "workstreams": []
+    },
+    {
+      "week": 3,
+      "target": "Director UI: clue board, kombinasi, pinpoint",
+      "gate": "Satu deduksi berhasil dari 2 clue",
+      "workstreams": []
+    },
+    {
+      "week": 4,
+      "target": "Pemisahan info per role, tuduhan + batas percobaan",
+      "gate": "Tidak ada kebocoran solusi di client",
+      "workstreams": []
+    },
+    {
+      "week": 5,
+      "target": "Lobby, preferensi role, NPC, AFK/rejoin",
+      "gate": "Sesi 3 pemain mulai tanpa bug",
+      "workstreams": []
+    },
+    {
+      "week": 6,
+      "target": "Case 0, story case #1 + varian, ping wheel final",
+      "gate": "Playtest internal",
+      "workstreams": []
+    },
+    {
+      "week": 7,
+      "target": "Playtest 3 pemain nyata (mobile), tuning idle time",
+      "gate": "Idle < 25%, selesai > 55%",
+      "workstreams": []
+    },
+    {
+      "week": 8,
+      "target": "Polish, rating questionnaire, rilis",
+      "gate": "Metrik minggu 7 terpenuhi",
+      "workstreams": []
+    }
+  ]
+}
