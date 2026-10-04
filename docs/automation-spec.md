@@ -3,10 +3,15 @@
 Rujukan PRD: §12 (metrik), §15 (telemetri), §17 (roadmap), §6 (idle time).
 Pemilik dokumen: Bima — Automation Engineer. Issue: EXTA-35 (induk EXTA-31).
 
-**Status: seluruh isi dokumen ini usulan. Tidak ada autopilot atau wakeup yang
-dibuat, diaktifkan, atau dijadwalkan.** Kondisi terukur saat dokumen ini
-ditulis: `multica autopilot list` → `total: 0`; `multica issue wakeup list`
-untuk EXTA-31 → `[]`.
+**Status: seluruh isi dokumen ini usulan. Tidak ada autopilot atau wakeup
+untuk kedua otomasi di bawah yang dibuat, diaktifkan, atau dijadwalkan.**
+
+Kondisi terukur saat dokumen ini ditulis: `multica autopilot list` → `total: 0`.
+`multica issue wakeup list` untuk EXTA-31 **tidak** kosong — Benjamin — CEO
+memasang tiga wakeup di sana pada 4 Okt 10:35-10:37 UTC untuk rantai
+development (pemicu EXTA-32/33/34, bukan pengingat gate roadmap). Tidak satu
+pun di antaranya otomasi B di dokumen ini, dan tidak ada yang dibuat oleh
+pekerjaan ini.
 
 ## 1. Ringkasan
 
@@ -229,9 +234,13 @@ multica issue wakeup delete 01a1065f-43f0-7e99-bcd5-06ac027e5c59 <wakeup-id>
 ```
 
 **Yang rusak kalau berhenti:** gate tetap harus diverifikasi, tapi tidak ada
-yang mengingatkan; kembali ke kondisi hari ini (0 wakeup terpasang). Risiko
-nyatanya: satu minggu terlewat tanpa keputusan gate, dan minggu berikutnya
-dibangun di atas asumsi yang belum diuji.
+yang mengingatkan. Risiko nyatanya: satu minggu terlewat tanpa keputusan gate,
+dan minggu berikutnya dibangun di atas asumsi yang belum diuji.
+
+Catatan saat menulis: EXTA-31 sudah punya tiga wakeup milik Benjamin — CEO
+(rantai development, 4 Okt 10:35-10:37 UTC). Saat menjalankan `wakeup disable`
+atau `wakeup delete`, pastikan `<wakeup-id>` yang dipakai adalah ID otomasi B,
+bukan salah satu dari ketiganya.
 
 ## 5. Alur telemetri → agregat → laporan
 
