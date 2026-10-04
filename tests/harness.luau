@@ -133,6 +133,37 @@ function Harness.throws(fn: () -> (), message: string): ()
 	end
 end
 
+-- Menandai bahwa laporan akhir dipegang `tests/run.luau`, yang memuat semua
+-- spec lalu melapor sekali di akhir. Dipanggil runner SEBELUM memuat spec.
+local aggregating = false
+
+function Harness.aggregate(): ()
+	aggregating = true
+end
+
+-- Dipanggil spec di baris terakhirnya, dan di `tests/run.luau` setelah semua
+-- spec dimuat.
+--
+-- Lewat runner ia diam untuk spec (runner yang melapor), supaya keluarannya
+-- tidak berisi beberapa ringkasan di tengah. Dijalankan sendiri
+-- (`lune run tests/<spec>.luau`), ia mencetak ringkasan dan keluar non-nol bila
+-- ada yang gagal -- tanpa itu, spec yang dijalankan sendiri selalu keluar 0 dan
+-- keluarannya tidak membuktikan apa pun.
+function Harness.finish(label: string): ()
+	if aggregating then
+		return
+	end
+	print(string.format("\n%s: %d assertion, %d gagal", label, assertions, #failures))
+	if #failures > 0 then
+		for _, failure in failures do
+			print("  - " .. failure)
+		end
+		require("@lune/process").exit(1)
+	end
+	print("SEMUA LULUS")
+end
+
+-- Laporan akhir, tanpa syarat. Hanya `tests/run.luau` yang memanggilnya.
 function Harness.report(): ()
 	print(string.format("\n%d assertion, %d gagal", assertions, #failures))
 	if #failures > 0 then

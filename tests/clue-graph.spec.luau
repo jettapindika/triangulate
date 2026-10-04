@@ -97,5 +97,4 @@ local dangling = ClueGraph.structuralProblems({
 	nodes = { { id = "a", type = "clue_card", needs = { "tidak_ada" } } },
 })
 Harness.check(#dangling > 0, "prasyarat yang menunjuk node tidak ada dilaporkan")
-
-return nil
+Harness.finish("clue-graph")

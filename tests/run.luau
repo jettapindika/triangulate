@@ -15,6 +15,9 @@
 
 local Harness = require("./harness")
 
+-- Runner ini yang melapor, sekali, di akhir; spec tidak melapor sendiri.
+Harness.aggregate()
+
 -- Modul murni yang diuji di sini tidak menyentuh global Roblox, jadi seluruh
 -- suite berjalan tanpa Studio. Itu alasan modul-modul ini dipisahkan dari glue
 -- di `init.server.luau` / `init.client.luau`.
@@ -30,6 +33,9 @@ require("./accusation.spec")
 require("./telemetry.spec")
 require("./case-loader.spec")
 require("./npc.spec")
+require("./puzzle-table.spec")
+require("./puzzle-table-service.spec")
+require("./gate-minggu-0.spec")
 
 Harness.report()
 

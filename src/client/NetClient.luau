@@ -20,12 +20,15 @@ export type Bound = {
 	ReportCard: RemoteEvent,
 	AccusationResult: RemoteEvent,
 	DeductionResult: RemoteEvent,
+	PuzzleState: RemoteEvent,
+	PiecePlaced: RemoteEvent,
 	Report: RemoteEvent,
 	SubmitDeduction: RemoteEvent,
 	Accuse: RemoteEvent,
 	Ping: RemoteEvent,
 	RequestHint: RemoteEvent,
 	ConfirmAccusation: RemoteEvent,
+	PlacePiece: RemoteEvent,
 }
 
 -- Menunggu seluruh remote muncul. Dipanggil sekali di awal; kalau salah satu
@@ -46,12 +49,15 @@ function NetClient.bind(shared: Instance): Bound
 		ReportCard = waitFor("ReportCard"),
 		AccusationResult = waitFor("AccusationResult"),
 		DeductionResult = waitFor("DeductionResult"),
+		PuzzleState = waitFor("PuzzleState"),
+		PiecePlaced = waitFor("PiecePlaced"),
 		Report = waitFor("Report"),
 		SubmitDeduction = waitFor("SubmitDeduction"),
 		Accuse = waitFor("Accuse"),
 		Ping = waitFor("Ping"),
 		RequestHint = waitFor("RequestHint"),
 		ConfirmAccusation = waitFor("ConfirmAccusation"),
+		PlacePiece = waitFor("PlacePiece"),
 	}
 end
 
@@ -85,6 +91,22 @@ end
 -- PRD §8: hint butuh persetujuan 2 role, jadi ini permintaan, bukan aksi.
 function NetClient.requestHint(bound: Bound): ()
 	bound.RequestHint:FireServer()
+end
+
+-- PRD §15: pelepasan satu potongan di meja puzzle.
+--
+-- Yang dikirim adalah posisi jari TERNORMALISASI terhadap bidang meja, bukan
+-- indeks sel. Server yang memutuskan potongan itu menempel di sel mana, dan
+-- apakah drop-nya sah (lihat `PuzzleTable.applyDrop`). Client mengirim ini
+-- sekali per pelepasan jari, bukan tiap frame.
+function NetClient.placePiece(
+	bound: Bound,
+	nodeId: string,
+	pieceId: string,
+	u: number,
+	v: number
+): ()
+	bound.PlacePiece:FireServer({ node_id = nodeId, piece_id = pieceId, u = u, v = v })
 end
 
 return NetClient

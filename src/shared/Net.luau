@@ -44,12 +44,15 @@ local REMOTE_NAMES: { string } = {
 	"ReportCard",
 	"AccusationResult",
 	"DeductionResult",
+	"PuzzleState",
+	"PiecePlaced",
 	"Report",
 	"SubmitDeduction",
 	"Accuse",
 	"Ping",
 	"RequestHint",
 	"ConfirmAccusation",
+	"PlacePiece",
 }
 
 -- Remote yang arahnya server -> client.
@@ -61,6 +64,8 @@ local SERVER_TO_CLIENT: { [string]: boolean } = {
 	ReportCard = true,
 	AccusationResult = true,
 	DeductionResult = true,
+	PuzzleState = true,
+	PiecePlaced = true,
 }
 
 -- Remote yang arahnya client -> server. Setiap handler-nya wajib memvalidasi
@@ -74,6 +79,7 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	Ping = true,
 	RequestHint = true,
 	ConfirmAccusation = true,
+	PlacePiece = true,
 }
 
 -- Field yang boleh dilihat tiap role, per jenis payload.
@@ -152,6 +158,26 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 		Searcher = { "suspects", "motives", "methods" },
 		Handler = { "suspects", "motives", "methods" },
 		Director = { "suspects", "motives", "methods" },
+	},
+
+	-- PRD §4, §15: meja puzzle Handler. Searcher tidak memegang meja sama
+	-- sekali; Director boleh melihatnya karena PRD §8 memberi Director hak
+	-- mengambil alih puzzle manual saat Handler diisi NPC (mode 2 pemain).
+	--
+	-- Field `region` adalah indeks potongan pada gambar sumber. Sel tujuan
+	-- (`target`) dan flag `correct` TIDAK ada di daftar ini -- keduanya
+	-- server-only, lihat `src/shared/PuzzleTable.luau`.
+	puzzle_state = {
+		Handler = { "puzzle_id", "cols", "rows", "pieces" },
+		Director = { "puzzle_id", "cols", "rows", "pieces" },
+	},
+
+	-- PRD §15: hasil penempatan otoritatif. Client memakainya untuk
+	-- menginterpolasi posisi potongan ke nilai server; `accepted` false berarti
+	-- drop ditolak dan client harus menarik potongan kembali.
+	piece_placed = {
+		Handler = { "piece_id", "x", "y", "placed", "accepted" },
+		Director = { "piece_id", "x", "y", "placed", "accepted" },
 	},
 }
 

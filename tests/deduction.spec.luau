@@ -13,7 +13,7 @@ local engine, problem = DeductionEngine.new(RECIPES)
 Harness.check(engine ~= nil, "mesin terbentuk: " .. tostring(problem))
 
 if engine == nil then
-	Harness.report()
+	Harness.finish("deduction")
 	return nil
 end
 
@@ -84,4 +84,4 @@ Harness.equal(
 	"menghitung field yang benar"
 )
 
-return nil
+Harness.finish("deduction")

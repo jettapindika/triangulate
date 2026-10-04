@@ -102,5 +102,4 @@ Harness.equal(assigned[2], "Searcher", "role pemain 2 setelah tukar")
 
 local badSwap = Matchmaking.swap(swapLobby, 1, 99, assigned)
 Harness.check(not badSwap, "tukar dengan pemain di luar lobby ditolak")
-
-return nil
+Harness.finish("matchmaking")

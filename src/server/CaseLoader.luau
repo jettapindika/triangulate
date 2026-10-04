@@ -193,6 +193,19 @@ end
 -- Memisahkan `roll` dari pembangkit acak membuat fungsi ini murni dan bisa
 -- diuji dari CLI.
 function CaseLoader.pickVariant(case: Case, roll: number): CaseVariant
+	return case.variants[CaseLoader.pickVariantIndex(case, roll)]
+end
+
+--[[
+	Indeks varian yang dipilih `pickVariant` untuk `roll` yang sama.
+
+	Kenapa terpisah: `CaseVariant` hanya membawa `culprit`/`motive`/`method`,
+	tanpa `variant_id`, sedangkan penyaring node ber-`variants` membutuhkan id
+	itu. Pemanggil memakai `roll` yang SAMA untuk kedua fungsi, jadi keduanya
+	selalu menunjuk varian yang sama -- satu rumus, bukan dua salinan yang bisa
+	menyimpang.
+]]
+function CaseLoader.pickVariantIndex(case: Case, roll: number): number
 	local count = #case.variants
 	if count == 0 then
 		error(string.format("kasus '%s' tidak punya variants", case.case_id))
@@ -205,8 +218,7 @@ function CaseLoader.pickVariant(case: Case, roll: number): CaseVariant
 		normalized = 0.999999
 	end
 
-	local index = math.floor(normalized * count) + 1
-	return case.variants[index]
+	return math.floor(normalized * count) + 1
 end
 
 -- Membersihkan cache. Dipakai uji dan saat kasus dimuat ulang.

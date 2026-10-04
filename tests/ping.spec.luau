@@ -46,5 +46,4 @@ Harness.check(not PingPhrases.isValid("Searcher", ""), "id kosong ditolak")
 local unknown = PingPhrases.forRole("Role_Hantu")
 Harness.equal(#unknown, 3, "role tak dikenal hanya mendapat frasa universal")
 Harness.ok(PingPhrases.isValid("Role_Hantu", "agree"), "frasa universal sah untuk role tak dikenal")
-
-return nil
+Harness.finish("ping")

@@ -114,5 +114,4 @@ Harness.suite("RoleAssignment: rotasi")
 Harness.equal(RoleAssignment.rotate(ROLES3, "Searcher"), "Handler", "Searcher -> Handler")
 Harness.equal(RoleAssignment.rotate(ROLES3, "Handler"), "Director", "Handler -> Director")
 Harness.equal(RoleAssignment.rotate(ROLES3, "Director"), "Searcher", "Director -> Searcher")
-
-return nil
+Harness.finish("role-assignment")
