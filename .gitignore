@@ -1,0 +1,8 @@
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+build/
+.rojo/
+*.lock
+.DS_Store
