@@ -242,14 +242,15 @@ arsitektur, bukan sekadar niat desain.
 Modul-modul ini **tidak** menyentuh satu pun global Roblox — tanpa `game`,
 `Instance`, `UDim2`, `Player`:
 
-`Config`, `Roles`, `Net`, `PingPhrases`, `RoleAssignment`, `Matchmaking`,
-`AccusationService`, `DeductionEngine`, `ClueGraph`, `TelemetryService`,
-`NPCController`, `CaseGraph`, `CaseValidator`, dan bagian murni `CaseLoader`
-(`pickVariant`, `shapeProblems`).
+`Config`, `Roles`, `Net`, `PingPhrases`, `PuzzleTable`, `RoleAssignment`,
+`Matchmaking`, `AccusationService`, `DeductionEngine`, `ClueGraph`,
+`TelemetryService`, `NPCController`, `PuzzleTableService`,
+`DirectorBoardService`, `CaseGraph`, `CaseValidator`, dan bagian murni
+`CaseLoader` (`pickVariant`, `shapeProblems`).
 
 Konsekuensi praktisnya besar: **aturan permainan bisa diuji dari CLI, tanpa
-Studio dan tanpa Roblox.** 867 assertion berjalan dalam waktu di bawah satu
-detik (`tests/run.luau`, 18 berkas spec). Untuk game yang aturan menang-kalahnya
+Studio dan tanpa Roblox.** 947 assertion berjalan dalam waktu di bawah satu
+detik (`tests/run.luau`, 19 berkas spec). Untuk game yang aturan menang-kalahnya
 serumit PRD §5 (tiga percobaan, gerbang N deduksi, kontradiksi wajib, rank
 S/A/B/C), itu perbedaan antara "bisa diuji sambil ngopi" dan "harus buka Studio
 tiap kali".
@@ -272,7 +273,7 @@ bisa jalan.
 
 ## 6. RemoteEvent: dibuat kode, bukan Rojo
 
-`init.server.luau` membuat seluruh 18 RemoteEvent dari satu sumber:
+`init.server.luau` membuat seluruh 21 RemoteEvent dari satu sumber:
 `Net.REMOTE_NAMES`. Tidak ada remote di `default.project.json`.
 
 Alasannya: kalau remote didefinisikan dua kali (sekali di file project, sekali
@@ -290,17 +291,24 @@ Pembagiannya:
 
 | Arah | Jumlah | Nama |
 |---|---|---|
-| Server → client | 10 | `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult`, `PuzzleState`, `PiecePlaced`, `PingRelay` |
-| Client → server | 8 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece` |
+| Server → client | 12 | `SessionState`, `ClueCard`, `TargetMarker`, `Pinpoint`, `ReportCard`, `AccusationResult`, `DeductionResult`, `PuzzleState`, `PiecePlaced`, `PingRelay`, `ContradictionResult`, `TablePreview` |
+| Client → server | 9 | `Report`, `SubmitDeduction`, `Accuse`, `Ping`, `SetTarget`, `RequestHint`, `ConfirmAccusation`, `PlacePiece`, `MarkContradiction` |
 
-`PingRelay` dan `SetTarget` adalah dua remote minggu 6. Keduanya ada karena
-`tests/net.spec.luau` menegaskan setiap remote punya **tepat satu** arah:
+`PingRelay`, `SetTarget`, `ContradictionResult`, dan `TablePreview` adalah
+remote minggu 3 dan minggu 6. Semuanya ada karena `tests/net.spec.luau`
+menegaskan setiap remote punya **tepat satu** arah:
 
 - `PingRelay` (server → client) dipisah dari `Ping` (client → server) supaya
   frasa ping tidak perlu membuat satu remote dua arah.
 - `SetTarget` (client → server) ada karena PRD §7 menjadikan Target Marker
   aksi **Handler**, jadi harus berangkat dari client; server meneruskannya ke
   Searcher lewat `TargetMarker`.
+- `MarkContradiction` (client → server) dan `ContradictionResult`
+  (server → client) dipisah karena hasilnya harus membawa **alasan** yang bisa
+  dibaca pemain (PRD §4), bukan sekadar diterima/ditolak.
+- `TablePreview` (server → client) memberi Director progres meja Handler
+  (PRD §7) tanpa memakai `PuzzleState`, yang membawa potongan dan tidak
+  seharusnya sampai ke Director.
 
 `NetClient` sengaja tidak menyediakan pengiriman payload bebas: tiap remote
 punya fungsi bernama (`NetClient.report`, `NetClient.deduce`, `NetClient.accuse`,
@@ -375,41 +383,38 @@ Semua perintah dijalankan dari akar repo.
 
 ### Sudah dibuktikan
 
-Semua perintah di bawah dijalankan pada commit `80b35e9` (kepala `main`),
-2026-10-04, dengan perintah yang **sama persis** dengan `.github/workflows/ci.yml`.
-Keluaran verbatim ada di `docs/rilis.md` bagian 1.
+Semua perintah di bawah dijalankan pada branch EXTA-56 (commit terakhir
+sebelum `in_review`), di atas `main` `06b6ef8`, 2026-10-04, dengan perintah
+yang **sama persis** dengan `.github/workflows/ci.yml`.
 
 | Perintah | Hasil |
 |---|---|
-| `lune run tests/run.luau` | **566 assertion, 0 gagal** — 15 berkas spec |
-| `selene --config selene.toml .` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
-| `stylua --config-path stylua.toml --check .` | **bersih** (exit 0) |
-| `luau-analyze --mode=strict` atas 13 modul murni | **0 diagnostik** |
-| `rojo build -o build-candidate.rbxlx` | **berhasil** — 200.771 byte |
-| `lune run tools/validate_case.luau -- data/cases/gallery_01.json` | **LULUS** — 0 errors, 0 warnings |
-
-Tabel ini dulu mencantumkan 358 assertion dan `selene src tests`; keduanya
-usang. Angka dan perintah di atas yang berlaku, dan `docs/rilis.md` bagian 1
-adalah sumber keluaran mentahnya.
+| `lune run tests/run.luau` | **947 assertion, 0 gagal** — 19 berkas spec |
+| `selene src tests tools` | **0 errors, 0 warnings, 0 parse errors** (exit 0) |
+| `stylua --check src tests tools` | **bersih** (exit 0) |
+| `luau-analyze --mode=strict` atas 18 modul murni | **0 diagnostik** |
+| `rojo build -o build.rbxlx` | **berhasil** — 295.926 byte |
+| `lune run tools/validate_case.luau -- data/cases/gallery_01.json data/cases/case_00.json data/cases/kersana_01.json` | **LULUS** — 0 errors, 0 warnings |
 
 Hasil `rojo build` juga diperiksa isinya, bukan cuma status keluarnya. Pohon
 yang dihasilkan dari `default.project.json`:
 
 ```
 ReplicatedStorage.Shared          Folder
-  Config, Net, PingPhrases, PuzzleTable, Roles   ModuleScript
+  Config, LocationMap, Net, PingPhrases, PuzzleTable, Roles  ModuleScript
   case/                            Folder
     CaseGraph, CaseLoader, CaseValidator, Compat  ModuleScript
-ServerScriptService.Server         Script (9 ModuleScript anak)
+ServerScriptService.Server         Script (10 ModuleScript anak)
   AccusationService, CaseLoader, ClueGraph, DeductionEngine,
-  Matchmaking, NPCController, PuzzleTableService, RoleAssignment,
-  TelemetryService
-ServerStorage.Cases.gallery_01     ModuleScript
+  DirectorBoardService, Matchmaking, NPCController, PuzzleTableService,
+  RoleAssignment, TelemetryService
+ServerStorage.Cases                Folder
+  case_00, gallery_01, kersana_01  ModuleScript
 StarterPlayer.StarterPlayerScripts.Client  LocalScript
-  Hud/ (PingWheel), NetClient, Table          ModuleScript
+  Board, Hud/ (PingWheel), NetClient, Table  ModuleScript
 ```
 
-Total 23 `ModuleScript`, 1 `Script`, 1 `LocalScript`, 3 `Folder`. Tidak ada
+Total 28 `ModuleScript`, 1 `Script`, 1 `LocalScript`, 3 `Folder`. Tidak ada
 `rbxassetid` nyata di pohon ini: `Table.SHEET` masih `rbxassetid://0`, jadi
 place ini tidak akan menampilkan gambar puzzle sampai sheet-nya diunggah.
 
@@ -422,11 +427,12 @@ tetapi **bukan** `--definitions`. Jadi modul yang menyentuh `Instance`,
 dan `Unknown global`, bukan karena kodenya salah, tetapi karena tipe itu tidak
 ada di binary-nya.
 
-Karena itu batasnya saya nyatakan eksplisit: **13 modul murni bersih di bawah
+Karena itu batasnya saya nyatakan eksplisit: **18 modul murni bersih di bawah
 `--mode=strict`; sisanya (`init.server.luau`, `init.client.luau`, `NetClient`,
-`Hud/*`, dan bagian `Instance` di `CaseLoader`) tidak bisa diperiksa tipe oleh
-binary ini.** Untuk itu dibutuhkan `luau-lsp` dengan `sourcemap.json` dari
-`rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD), bukan scaffold ini.
+`Hud/*`, `Table/*`, `Board/*`, dan bagian `Instance` di `CaseLoader`) tidak bisa
+diperiksa tipe oleh binary ini.** Untuk itu dibutuhkan `luau-lsp` dengan
+`sourcemap.json` dari `rojo sourcemap` — dan itu bagian dari EXTA-34 (CI/CD),
+bukan scaffold ini.
 
 **`rojo build` membuktikan struktur, bukan perilaku.** Tidak ada Roblox runtime
 di lingkungan ini, jadi tidak ada satu pun baris `init.server.luau` yang pernah
@@ -453,12 +459,14 @@ Jadi uji reserved server (PRD §15) butuh place yang sudah dipublikasikan.
 
 | # | Utang | Risiko kalau dibiarkan | Kapan |
 |---|---|---|---|
-| 1 | Tidak ada rate limiting remote | Client bisa spam `Report`/`SubmitDeduction`; throttle platform ~500 req/s dibagi lintas remote bertipe sama | Sebelum rilis |
+| 1 | Tidak ada rate limiting remote | Client bisa spam `Report`/`SubmitDeduction`/`MarkContradiction`; throttle platform ~500 req/s dibagi lintas remote bertipe sama | Sebelum rilis |
 | 2 | `Players.MaxPlayers` hanya diverifikasi, tidak dipaksa | Place dengan MaxPlayers ≠ 3 bisa jalan | Sebelum playtest |
 | 3 | Lobby minggu 5 belum ada (§7) | Sesi hanya mulai dengan 3 manusia; NPC tidak jalan | Minggu 5 |
 | 4 | `luau-lsp` + `sourcemap.json` belum di CI | Regresi tipe di modul Roblox-facing tidak tertangkap otomatis | EXTA-34 |
 | 5 | Telemetri dihitung tapi tidak dikirim | PRD §12 tidak bisa diukur | EXTA-34 |
 | 6 | Belum ada `RemoteFunction` untuk permintaan balasan | Belum dibutuhkan; hindari `InvokeClient` (server bisa yield selamanya) | Kalau perlu |
+| 7 | Remote `TargetMarker` belum pernah ditembakkan | Handler tidak bisa menandai target untuk Searcher (PRD §7) — butuh UI Handler | Minggu 4 |
+| 8 | Pinpoint baru sampai ke client sebagai chip di peta Director, bukan marker di dunia | Searcher tidak melihat marka di lokasi (PRD §7) — data kasus belum punya koordinat dunia | Minggu 4 |
 
 Untuk nomor 6, peringatannya verbatim dari dokumentasi: `InvokeClient` — *"If
 the client doesn't return a value, the server yields forever."*

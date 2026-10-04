@@ -9,8 +9,9 @@
 -- Tampilan yang dibangun di sini adalah yang bisa dibangun sekarang: Role Card
 -- (PRD §9), status sesi, feedback tuduhan (PRD §5), ping wheel + toast
 -- (PRD §7), Report Card (PRD §7), dan Target Marker dengan kompas (PRD §7).
--- Meja puzzle dan clue board adalah scope minggu 1-3 (PRD §17) dan belum ada
--- di sini.
+-- Meja puzzle dan clue board punya modulnya sendiri -- `Table` (minggu 1, PRD
+-- §17) dan `Board` (minggu 3) -- dan sengaja tidak digabung ke HUD: keduanya
+-- menempati layar penuh, dan `Table` memindahkan kamera.
 
 local PingWheel = require(script.PingWheel)
 
@@ -187,7 +188,8 @@ function Hud.mount(
 
 	-- PRD §7: "Target Marker: Handler menaruh ikon target yang muncul di HUD
 	-- Searcher dan arah kompas." Panel ini hanya muncul setelah marker datang.
-	local markerPanel = panel(gui, "TargetMarker", UDim2.new(1, -276, 0, 16), UDim2.fromOffset(260, 74))
+	local markerPanel =
+		panel(gui, "TargetMarker", UDim2.new(1, -276, 0, 16), UDim2.fromOffset(260, 74))
 	markerPanel.Visible = false
 
 	local markerLabel = label(markerPanel, "Target", 17, COLORS.accent)

@@ -18,6 +18,7 @@ local Harness = require("./harness")
 local Net = require("../src/shared/Net")
 local CaseLoader = require("../src/shared/case/CaseLoader")
 local PuzzleTable = require("../src/shared/PuzzleTable")
+local DirectorBoardService = require("../src/server/DirectorBoardService")
 
 local gallery = serde.decode("json", fs.readFile("data/cases/gallery_01.json"))
 local load = CaseLoader.load(gallery, "seed-kebocoran")
@@ -51,6 +52,37 @@ local function payloadFor(view: string, role: string): { [string]: any }
 			pinpoint = "pin_office",
 			unlocks = { "obj_ledger" },
 			clue_ids = { "clue_guard_off", "clue_card_log" },
+		}
+	elseif view == "pinpoint" then
+		return {
+			id = "obj_ledger",
+			label = "Buku kas tersembunyi di belakang lukisan",
+			culprit = solution.culprit,
+		}
+	elseif view == "contradiction_result" then
+		return {
+			accepted = false,
+			statement_id = 3,
+			reason = DirectorBoardService.REJECT_REASON,
+			marked_count = 0,
+			contradictions_required = 1,
+			deductions_done = 1,
+			key_deductions_required = gallery.key_deductions,
+			gate_open = false,
+			lie = true,
+		}
+	elseif view == "table_preview" then
+		return {
+			entries = {
+				{
+					puzzle_id = "torn_doc:ev_schedule",
+					puzzle_type = "torn_doc",
+					placed = 1,
+					total = 4,
+					solved = false,
+				},
+			},
+			culprit = solution.culprit,
 		}
 	elseif view == "session_state" then
 		return {
@@ -143,16 +175,22 @@ for view, byRole in Net.CLIENT_VIEWS do
 	end
 end
 
--- 9 view awal x 3 role = 27, ditambah dua view meja puzzle yang hanya untuk
--- Handler dan Director (PRD §4: meja milik Handler; §8: Director boleh
--- mengambil alih puzzle manual di mode 2 pemain), ditambah `target_marker`
--- yang hanya punya entri Searcher dan Handler (PRD §7: marker dipasang Handler
--- dan terlihat di HUD Searcher; Director tidak melihat dunia Searcher).
--- Searcher tidak memegang meja sama sekali, jadi pasangannya sengaja tidak ada
--- -- dan `Net.forRole` mengembalikan nil untuknya, yang berarti "jangan kirim".
+-- 34 pasangan view x role dari 14 view:
+--   * 8 view x 3 role = 24 -- `briefing`, `clue_card`, `deduction`,
+--     `session_state`, `report_card`, `ping`, `accusation_result`,
+--     `accusation_options`;
+--   * 4 view x 2 role = 8 -- `pinpoint` tanpa Handler (PRD §3: ia di meja,
+--     bukan di lokasi), `target_marker` tanpa Director (PRD §7: ia tidak
+--     melihat dunia Searcher), dan `puzzle_state`/`piece_placed` tanpa
+--     Searcher (PRD §4: meja milik Handler; §8: Director boleh mengambil alih
+--     puzzle manual di mode 2 pemain);
+--   * 2 view x 1 role = 2 -- `contradiction_result` dan `table_preview`, hanya
+--     Director.
+-- Pasangan yang tidak ada itu sengaja: `Net.forRole` mengembalikan nil untuknya,
+-- dan nil berarti "jangan kirim", bukan kelalaian.
 Harness.check(
-	pairsChecked == 30,
-	string.format("kebocoran: 11 view x role tersapu (terperiksa: %d)", pairsChecked)
+	pairsChecked == 34,
+	string.format("kebocoran: 14 view x role tersapu (terperiksa: %d)", pairsChecked)
 )
 
 Harness.suite("kebocoran: kontrol detektor")
@@ -178,6 +216,40 @@ local badHits =
 Harness.check(
 	#badHits > 0,
 	string.format("kontrol: statements akar terdeteksi di view briefing (%d)", #badHits)
+)
+
+-- Mode kegagalan yang sama untuk pernyataan saksi: `Net` menyalin nilai apa
+-- adanya, jadi kalau daftar pernyataan diisi langsung dari `case.statements`
+-- (tanpa lewat `CaseLoader.projectForRole`), `lie` dan `contradicted_by` ikut
+-- menyeberang di dalam item list. Sweep di atas memakai payload briefing yang
+-- ditulis tangan dan memang bersih; kontrol ini membuktikan detektornya memang
+-- bisa melihat pelanggarannya.
+local rawStatementHits = Net.findSecrets(
+	Net.forRole("briefing", "Director", { statements = gallery.statements }),
+	"briefing.Director.raw"
+)
+Harness.check(
+	#rawStatementHits > 0,
+	string.format("kontrol: pernyataan mentah terdeteksi di view briefing (%d)", #rawStatementHits)
+)
+
+-- Dan jalur produksinya bersih: `CaseLoader.projectForRole` yang merakit daftar
+-- pernyataan Director, dan hasilnya hanya membawa `id`, `who`, `text`.
+local projectedDirector = CaseLoader.projectForRole(gallery, load.session.variant_id, "Director")
+assert(projectedDirector ~= nil, "proyeksi Director harus terbentuk")
+Harness.check(
+	#Net.findSecrets(
+			Net.forRole("briefing", "Director", projectedDirector),
+			"briefing.Director.projected"
+		) == 0,
+	"kontrol: proyeksi pernyataan dari projectForRole bersih"
+)
+Harness.check(
+	#projectedDirector.statements > 0 and projectedDirector.statements[1].id ~= nil,
+	string.format(
+		"kontrol: proyeksi pernyataan membawa id (%d pernyataan)",
+		#projectedDirector.statements
+	)
 )
 
 local viewsOk, viewProblems = Net.validateViews()

@@ -55,6 +55,9 @@ local REMOTE_NAMES: { string } = {
 	"RequestHint",
 	"ConfirmAccusation",
 	"PlacePiece",
+	"MarkContradiction",
+	"ContradictionResult",
+	"TablePreview",
 }
 
 -- Remote yang arahnya server -> client.
@@ -75,6 +78,8 @@ local SERVER_TO_CLIENT: { [string]: boolean } = {
 	PuzzleState = true,
 	PiecePlaced = true,
 	PingRelay = true,
+	ContradictionResult = true,
+	TablePreview = true,
 }
 
 -- Remote yang arahnya client -> server. Setiap handler-nya wajib memvalidasi
@@ -95,6 +100,7 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	RequestHint = true,
 	ConfirmAccusation = true,
 	PlacePiece = true,
+	MarkContradiction = true,
 }
 
 -- Field yang boleh dilihat tiap role, per jenis payload.
@@ -104,6 +110,13 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 -- dan tidak ada role yang boleh tahu field solusi.
 local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 	-- PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu apa / Tugas pertamamu".
+	--
+	-- `briefing.statements` (Director) adalah satu-satunya jalur pernyataan
+	-- saksi ke client: `CaseLoader.projectForRole` yang menyaringnya per varian
+	-- dan membuang `lie`/`contradicted_by`/`variants` sebelum proyeksi ini,
+	-- karena `Net.project` menyalin nilai apa adanya. `id` adalah indeks
+	-- 1-based di `case.statements` dan itulah identitas pernyataan -- `who`
+	-- tidak unik (`gallery_01.json` punya dua pernyataan `guard`).
 	briefing = {
 		Searcher = { "case_id", "location", "objective", "knowns", "unknowns", "target" },
 		Handler = { "case_id", "location", "objective", "knowns", "unknowns", "target" },
@@ -118,10 +131,48 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 	},
 
 	-- PRD §4: Deduksi menaruh pinpoint baru dan membuka target baru.
+	--
+	-- `reason` dibawa HANYA untuk kombinasi yang ditolak. Berbeda dengan
+	-- tuduhan (PRD §5: "hanya 'X dari 3 benar', tidak menyebutkan field mana"),
+	-- kombinasi Clue Card bukan tebakan terhadap solusi -- ia pemeriksaan
+	-- resep, dan `DeductionEngine` sudah mengembalikan alasan berbahasa
+	-- Indonesia yang tidak menyebut resep mana pun. Tanpa alasan, Director
+	-- tidak bisa membedakan "kartu belum lengkap" dari "kombinasi salah".
+	--
+	-- `pinpoint_label` adalah label node yang dibuka (teks yang sudah ada di
+	-- data kasus), bukan informasi baru tentang solusi.
 	deduction = {
-		Searcher = { "id", "pinpoint", "unlocks" },
-		Handler = { "id", "pinpoint", "unlocks" },
-		Director = { "id", "pinpoint", "unlocks", "clue_ids" },
+		Searcher = { "id", "pinpoint", "pinpoint_label", "unlocks", "reason" },
+		Handler = { "id", "pinpoint", "pinpoint_label", "unlocks", "reason" },
+		Director = { "id", "pinpoint", "pinpoint_label", "unlocks", "clue_ids", "reason" },
+	},
+
+	-- PRD §4, §7: pinpoint baru hasil Deduksi. PRD §7: "Pinpoint: Director
+	-- menaruh marker yang terlihat di dunia Searcher." Handler tidak menerimanya
+	-- -- ia bekerja di meja, bukan di lokasi (PRD §3).
+	pinpoint = {
+		Searcher = { "id", "label" },
+		Director = { "id", "label" },
+	},
+
+	-- PRD §4, §5: hasil penandaan Kontradiksi. `reason` di sini memang
+	-- player-readable -- issue memintanya -- tapi sengaja TIDAK membedakan
+	-- "pernyataan ini jujur" dari "bukti pembantahnya belum ada", supaya tidak
+	-- jadi oracle pembohong. Lihat `DirectorBoardService.REJECT_REASON`.
+	--
+	-- `gate_open` dan angka-angkanya ikut supaya clue board bisa memperbarui
+	-- status form tuduhan tanpa menunggu `session_state` berikutnya.
+	contradiction_result = {
+		Director = {
+			"accepted",
+			"statement_id",
+			"reason",
+			"marked_count",
+			"contradictions_required",
+			"deductions_done",
+			"key_deductions_required",
+			"gate_open",
+		},
 	},
 
 	-- PRD §6: timer cleanup dan progres rantai.
@@ -143,6 +194,9 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 			"chains",
 			"deductions_done",
 			"key_deductions_required",
+			"contradictions_marked",
+			"contradictions_required",
+			"gate_open",
 		},
 	},
 
@@ -211,6 +265,17 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 	puzzle_state = {
 		Handler = { "puzzle_id", "cols", "rows", "pieces" },
 		Director = { "puzzle_id", "cols", "rows", "pieces" },
+	},
+
+	-- PRD §7: "Table Preview: Director melihat thumbnail meja Handler
+	-- (read-only) supaya tahu progres tanpa bertanya."
+	--
+	-- Hanya angka progres dan identitas meja -- bukan potongan, bukan posisi,
+	-- bukan sel tujuan. Thumbnail-nya sendiri digambar client dari progres itu;
+	-- mengirim potongan penuh hanya akan menduplikasi `puzzle_state` dan
+	-- memberi Director kendali meja yang bukan miliknya.
+	table_preview = {
+		Director = { "entries" },
 	},
 
 	-- PRD §15: hasil penempatan otoritatif. Client memakainya untuk

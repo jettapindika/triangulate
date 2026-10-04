@@ -23,6 +23,7 @@ local PingPhrases = require(Shared.PingPhrases)
 local NetClient = require(script.NetClient)
 local Hud = require(script.Hud)
 local Table = require(script.Table)
+local Board = require(script.Board)
 
 local player = Players.LocalPlayer
 local bound = NetClient.bind(Shared)
@@ -37,6 +38,32 @@ local bound = NetClient.bind(Shared)
 -- gerbang perannya sendiri -- tidak perlu membaca role dari payload, yang bisa
 -- saja belum tiba.
 local table_: Table.Mount? = nil
+
+-- Clue board Director (PRD §4, §5, §7). Sama seperti meja: dipasang LAZY, bukan
+-- di sini.
+--
+-- Gerbangnya kali ini bukan kamera melainkan role: clue board hanya masuk akal
+-- untuk Director, dan payload yang memicunya -- `statements`, `table_preview`,
+-- `contradiction_result` -- memang hanya dikirim ke Director (`Net.CLIENT_VIEWS`).
+-- Jadi client tidak perlu menebak role dari payload; server sudah menyaringnya.
+-- Payload pertama yang tiba memasang papan.
+local board: Board.Mount? = nil
+
+local function ensureBoard(): Board.Mount
+	local current = board
+	if current == nil then
+		current = Board.mount(player, {
+			deduce = function(clueIds: { string })
+				NetClient.deduce(bound, clueIds)
+			end,
+			markContradiction = function(statementId: number)
+				NetClient.markContradiction(bound, statementId)
+			end,
+		})
+		board = current
+	end
+	return current
+end
 
 -- Status yang ditampilkan HUD. Server adalah satu-satunya penulis nilai-nilai
 -- ini; client tidak menghitungnya sendiri.
@@ -97,6 +124,16 @@ bound.SessionState.OnClientEvent:Connect(function(payload: any)
 	-- membedakannya adalah ada tidaknya `objective`.
 	if payload.objective ~= nil then
 		hud.showRoleCard(payload)
+		-- PRD §4: pernyataan saksi menyeberang di dalam briefing Director --
+		-- `CaseLoader.projectForRole` yang menyaringnya per varian dan membuang
+		-- `lie`/`contradicted_by`/`variants`. Kedatangannya menandai bahwa papan
+		-- Director perlu dipasang.
+		if payload.statements ~= nil then
+			ensureBoard().applyStatements(payload)
+		end
+	elseif payload.gate_open ~= nil then
+		-- PRD §5: status gerbang form tuduhan.
+		ensureBoard().applySessionState(payload)
 	end
 
 	hud.update(state)
@@ -158,6 +195,16 @@ bound.PiecePlaced.OnClientEvent:Connect(function(payload: any)
 	end
 end)
 
+-- PRD §4: Clue Card yang terbuka dari bukti yang selesai dirakit Handler.
+-- Director menggabungkannya di clue board.
+bound.ClueCard.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	ensureBoard().applyClueCard(payload)
+end)
+
 -- PRD §7: "Target Marker: Handler menaruh ikon target yang muncul di HUD
 -- Searcher dan arah kompas." Label dan arah datang dari server; client tidak
 -- menghitung keduanya.
@@ -201,23 +248,43 @@ bound.ReportCard.OnClientEvent:Connect(function(payload: any)
 	hud.showReport(payload)
 end)
 
--- PRD §4: "Deduksi menaruh pinpoint baru di map dan membuka target baru."
---
--- Belum ada peta di client -- Director UI adalah scope minggu 3 (PRD §17) --
--- jadi pinpoint ditampilkan sebagai baris teks, bukan sebagai marker di peta.
--- Yang penting di sini: nilai `pinpoint` memang sampai ke client, dan client
--- tidak mengarangnya.
+-- PRD §4: hasil kombinasi Clue Card. `reason` hanya terisi saat ditolak; saat
+-- diterima, payload membawa `pinpoint`/`unlocks` dan BUKAN resepnya.
 bound.DeductionResult.OnClientEvent:Connect(function(payload: any)
 	if type(payload) ~= "table" then
 		return
 	end
 
-	local pinpoint = payload.pinpoint
-	if type(pinpoint) == "string" then
-		hud.showPing("Clue board", string.format("Deduksi baru, pinpoint: %s", pinpoint))
-	else
-		hud.showPing("Clue board", "Deduksi baru selesai")
+	ensureBoard().applyDeduction(payload)
+end)
+
+-- PRD §4, §7: pinpoint baru. Director melihatnya di peta; Searcher melihatnya
+-- di dunia sebagai marker.
+bound.Pinpoint.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
 	end
+
+	ensureBoard().applyPinpoint(payload)
+end)
+
+-- PRD §4: hasil penandaan Kontradiksi. Ditolak selalu disertai alasan yang bisa
+-- dibaca pemain.
+bound.ContradictionResult.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	ensureBoard().applyContradictionResult(payload)
+end)
+
+-- PRD §7: Table Preview read-only meja Handler.
+bound.TablePreview.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	ensureBoard().applyTablePreview(payload)
 end)
 
 return nil

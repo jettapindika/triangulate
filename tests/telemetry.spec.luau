@@ -140,11 +140,7 @@ Harness.equal(summary.roles.Handler.inputs, 0, "role tanpa aktivitas tetap muncu
 
 -- SOP-02 langkah 12: varian yang dipilih harus terekam di telemetri. Tanpa ini,
 -- "varian mana yang lebih sering buntu" tidak bisa dihitung dari rekaman sesi.
-Harness.equal(
-	summary.variant,
-	nil,
-	"sesi tanpa varian tidak mengarang nama varian"
-)
+Harness.equal(summary.variant, nil, "sesi tanpa varian tidak mengarang nama varian")
 
 local variantSession = TelemetryService.newSession(0, WINDOW, "v_bowo")
 Harness.equal(
@@ -156,7 +152,10 @@ Harness.equal(
 -- Deduksi kini dicatat server sebagai event tersendiri; sebelum ini `deduction`
 -- ada di `EventKind` tetapi tidak pernah muncul di ringkasan.
 local deductionSession = TelemetryService.newSession(0, WINDOW)
-TelemetryService.record(deductionSession, { kind = "deduction", role = "Director", t = 9, detail = "ded_a_1" })
+TelemetryService.record(
+	deductionSession,
+	{ kind = "deduction", role = "Director", t = 9, detail = "ded_a_1" }
+)
 Harness.equal(
 	TelemetryService.summary(deductionSession, { "Director" }, 10).roles.Director.deductions,
 	1,

@@ -34,7 +34,10 @@ Harness.equal(LocationMap.bearing(origin, { x = 0.1, y = 0.5 }), 270, "barat = 2
 local northeast = LocationMap.bearing(origin, { x = 0.9, y = 0.9 })
 Harness.check(northeast ~= nil, "timur laut punya arah")
 if northeast ~= nil then
-	Harness.check(northeast > 0 and northeast < 90, string.format("timur laut di antara 0 dan 90 (dapat %.1f)", northeast))
+	Harness.check(
+		northeast > 0 and northeast < 90,
+		string.format("timur laut di antara 0 dan 90 (dapat %.1f)", northeast)
+	)
 end
 
 -- Arah selalu di [0, 360): nilai negatif dari atan2 sudah dinormalkan, sehingga
@@ -81,7 +84,8 @@ Harness.suite("LocationMap: cakupan data kasus")
 -- Setiap lokasi yang dipakai `data/cases/*.json` harus punya titik masuk dan
 -- anchor untuk setiap node objeknya. Kalau tidak, marker untuk objek itu tidak
 -- pernah punya bearing -- dan itu gagal secara senyap di HUD, bukan di sini.
-local CASES = { "data/cases/gallery_01.json", "data/cases/case_00.json", "data/cases/kersana_01.json" }
+local CASES =
+	{ "data/cases/gallery_01.json", "data/cases/case_00.json", "data/cases/kersana_01.json" }
 
 local totalObjects = 0
 for _, path in CASES do

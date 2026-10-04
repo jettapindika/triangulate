@@ -4,15 +4,17 @@ Rujukan: PRD v0.2 §15, §16, §17. Dokumen ini mencatat apa yang benar-benar
 jalan setelah minggu 0-1, apa yang belum, dan risiko teknis yang terbukti dari
 spike — bukan daftar rencana.
 
-Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (867 assertion,
-18 berkas spec), `lune run tests/leak-sweep.spec.luau`, dan
+Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (947 assertion,
+19 berkas spec), `lune run tests/leak-sweep.spec.luau`, dan
 `lune run tools/spike-s02-protokol.luau`. Angka di bawah berasal dari ketiganya
 plus `docs/spike-minggu-0-hasil.md`.
 
-Angka 867 adalah hasil terakhir setelah pekerjaan minggu 6 (Case 0, story case
-`kersana_01`, ping wheel final). Naik dari 566 karena tiga berkas spec baru
-(`location-map`, `case-content`, `puzzle-types`) dan perluasan `leak-sweep`,
-`ping`, serta `telemetry`.
+Angka 947 adalah hasil terakhir setelah pekerjaan minggu 2-3 dan minggu 6
+bermuara: tiga berkas spec dari minggu 6 (`location-map`, `case-content`,
+`puzzle-types`) dan satu dari minggu 3 (`director-board`), di atas 566 assertion
+saat catatan ini pertama ditulis. Naiknya bukan karena tes baru menguji hal
+yang sama — tiap berkas baru menguji aturan yang sebelumnya tidak punya
+penjaga.
 
 ## 1. Apa yang sudah jalan
 
@@ -23,7 +25,7 @@ Angka 867 adalah hasil terakhir setelah pekerjaan minggu 6 (Case 0, story case
 | §15 interpolasi di client | `PuzzleTable.interpolate` dipanggil tiap `RenderStepped` | `src/client/Table/init.luau:310` |
 | §4 drag-and-snap | Ambil potongan, gerakkan mengikuti jari, lepas → snap ke sel terdekat | `grab`/`drag`/`release` di `src/client/Table/init.luau` |
 | §4 tiga tipe puzzle end to end | `torn_doc` 16 potongan, `timeline` 8, `cipher` 9 — ketiganya dirakit sampai `solved` lewat jalur server | `tests/puzzle-types.spec.luau`; `tests/gate-minggu-0.spec.luau` suite 3 untuk rantai `torn_doc` di `gallery_01.json` |
-| §15 server-authoritative | Resep deduksi, penilaian tuduhan, dan penyelesaian meja semuanya di server | `src/server/init.server.luau`; `tests/leak-sweep.spec.luau` 30 pasangan view×role, 0 temuan |
+| §15 server-authoritative | Resep deduksi, penilaian tuduhan, dan penyelesaian meja semuanya di server | `src/server/init.server.luau`; `tests/leak-sweep.spec.luau` 34 pasangan view×role, 0 temuan |
 | §4 Clue Card dari bukti | Meja selesai → `yields` → `ClueCard` ke Director, Handler, Searcher dengan proyeksi per role | `handlePlacePiece`, `src/server/init.server.luau:547` |
 | §16 data-driven | Tipe puzzle dibaca dari `data/cases/gallery_01.json`; menambah kasus tidak menyentuh kode | `PuzzleTableService.build` |
 | §15 telemetri | Event `input` per penempatan potongan, plus `input` untuk ping dan `deduction` untuk deduksi; `variant` ikut tercatat per sesi | `TelemetryService.record` di `handlePlacePiece`, `handlePing`, `handleDeduce`; `TelemetryService.summary().variant` |
@@ -35,6 +37,10 @@ Angka 867 adalah hasil terakhir setelah pekerjaan minggu 6 (Case 0, story case
 | §7 Report Card tanpa mengetik | Searcher menekan Report → server memperkaya label + lokasi dari data kasus | `handleReport`; `NetClient.report(bound, objectId)` |
 | §7 Target Marker di HUD Searcher | Handler menandai target → `SetTarget` → `TargetMarker` + bearing kompas | `handleSetTarget`; `src/shared/LocationMap.luau` |
 | §5 gerbang deduksi & anti brute-force | Ambang N per tipe kasus; pinpoint deduksi diturunkan dari rantai, bukan ditulis di data | `CaseGraph.primaryOrigin`; `handleDeduce` |
+| §4 clue board Director | Layar 2D mobile-first: kartu Clue, pernyataan, peta pinpoint, Table Preview; drag kartu ke kartu mengirim kombinasi | `src/client/Board/init.luau`; `tests/director-board.spec.luau` |
+| §4 Kontradiksi | Director menandai pernyataan yang dibantah bukti; server memeriksa `lie` + `contradicted_by`, client hanya menerima nomor | `DirectorBoardService.checkMark`; `handleMarkContradiction` |
+| §5 N Deduksi Kunci dari data | N dibaca dari angka `key_deductions` kasus, bukan dihitung dari rumus 65%; gerbang form = N deduksi kunci + 1 kontradiksi | `DirectorBoardService.new`; `gateState`; `handleAccuse` |
+| §7 Table Preview | Director melihat progres meja Handler (read-only) tanpa bertanya; yang menyeberang hanya hitungan, bukan potongan | `tablePreviewEntries`; `Net.CLIENT_VIEWS.table_preview` |
 
 Ketiga tipe puzzle punya grid sendiri (`torn_doc` 4×4, `timeline` 4×2, `cipher`
 3×3) dan ketiganya kini dirakit **end to end** sampai `solved` di
@@ -78,7 +84,13 @@ ping wheel akan terhitung menganggur.
   punya UI, `preferences` masih `Roles.ALL` (tanpa preferensi). Daftar lengkap
   ada sebagai komentar di `src/server/init.server.luau` bagian 7.
 - **NPC Director terpandu** — P1 (PRD §16).
-- **Kontradiksi di clue board** — minggu 3-4.
+- **Form tuduhan (UI Pelaku/Motif/Cara)** — minggu 4. Gerbangnya sudah
+  dihitung server dan diuji (`gateState`, `handleAccuse` menolak tuduhan
+  sebelum N), tetapi formnya sendiri belum ada; HUD masih menampilkan satu
+  baris teks hasil tuduhan.
+- **Clue board dan Kontradiksi** — minggu 3. **Sudah ada** (§1):
+  `src/client/Board/init.luau` dan `DirectorBoardService`, dengan gerbang
+  deduksi + kontradiksi yang divalidasi server.
 
 Catatan: baris *"Case 0 dan story case — minggu 6"* sudah tidak berlaku; dua
 berkas kasusnya ada dan lolos validator (§1). Yang **belum** ada dari minggu 6

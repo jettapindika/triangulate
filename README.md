@@ -26,6 +26,8 @@ src/shared/              Direplikasi ke client -- TIDAK BOLEH berisi rahasia
   Roles.luau             Tiga role, rotasi, prioritas keadilan
   Net.luau               Kontrak remote + proyeksi whitelist per role
   PingPhrases.luau       Frasa ping wheel per role
+  PuzzleTable.luau       Geometri puzzle (grid, potongan, toleransi)
+  LocationMap.luau       Titik masuk lokasi + anchor objek + bearing
   case/                  Skema dan validasi data kasus (murni, dual-target)
     CaseGraph.luau       Ketergantungan, keterjangkauan, unlocks
     CaseValidator.luau   Validator skema + graf (asiklik, tanpa rantai buntu)
@@ -42,16 +44,22 @@ src/server/              ServerScriptService -- tidak pernah direplikasi
   Matchmaking.luau       Lobby, ready check, batas waktu
   NPCController.luau     Pengambilalihan AFK, aksi NPC
   TelemetryService.luau  Idle time, waktu ke clue pertama
+  PuzzleTableService.luau Meja puzzle: entri, penempatan, progres
+  DirectorBoardService.luau Pernyataan saksi, kontradiksi, pinpoint, N
 
 src/client/              StarterPlayerScripts
   init.client.luau       Titik masuk client
   NetClient.luau         Binding remote; tiap remote punya fungsi bernama
   Hud/init.luau          Kerangka HUD
   Hud/PingWheel.luau     Ping wheel
+  Table/init.luau        Meja puzzle top-down (kamera scriptable)
+  Board/init.luau        Clue board 2D: kartu, pernyataan, pinpoint, pratinjau
 
 schema/case.schema.json  Skema JSON data kasus (dokumentasi + alat luar)
 data/cases/              Di-mount ke ServerStorage.Cases
   gallery_01.json        Kasus contoh "Lukisan yang Tertukar"
+  case_00.json           Case 0: tutorial singkat
+  kersana_01.json        Kasus kedua: bengkel Kersana
   README.md              Aturan penulisan data kasus
 
 tools/                   Alat CLI
@@ -77,9 +85,9 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau                        # 566 assertion, 15 berkas spec
-selene --config selene.toml .                  # lint
-stylua --config-path stylua.toml --check .     # format
+lune run tests/run.luau        # 947 assertion, 19 berkas spec
+selene src tests tools         # lint
+stylua --check src tests tools # format
 ```
 
 Perintahnya sama persis dengan yang dijalankan CI (`.github/workflows/ci.yml`),
@@ -92,11 +100,14 @@ jadi ia hanya bisa memeriksa modul murni:
 ```sh
 luau-analyze --mode=strict \
   src/shared/Config.luau src/shared/Roles.luau src/shared/Net.luau \
-  src/shared/PingPhrases.luau src/server/RoleAssignment.luau \
-  src/server/Matchmaking.luau src/server/AccusationService.luau \
-  src/server/DeductionEngine.luau src/server/ClueGraph.luau \
-  src/server/TelemetryService.luau src/server/NPCController.luau \
-  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau
+  src/shared/PingPhrases.luau src/shared/PuzzleTable.luau src/shared/LocationMap.luau \
+  src/server/RoleAssignment.luau src/server/Matchmaking.luau \
+  src/server/AccusationService.luau src/server/DeductionEngine.luau \
+  src/server/ClueGraph.luau src/server/TelemetryService.luau \
+  src/server/NPCController.luau src/server/PuzzleTableService.luau \
+  src/server/DirectorBoardService.luau \
+  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau \
+  src/shared/case/CaseLoader.luau
 ```
 
 Pemeriksaan tipe untuk berkas yang menyentuh API Roblox butuh `luau-lsp` dengan
@@ -117,19 +128,22 @@ rojo serve
 
 ## Yang belum ada
 
-Scaffold ini adalah minggu 0 dari PRD §17. Yang **belum** terpasang, dengan
-nomor minggunya:
+Scaffold ini berjalan sampai minggu 3 dari PRD §17. Yang **belum** terpasang,
+dengan nomor minggunya:
 
 | Belum | Minggu (PRD §17) |
 |---|---|
-| Meja puzzle top-down, drag-and-snap | 1 — **sudah ada** (EXTA-53) |
-| Lokasi, objek, kunci, rantai A→bukti end to end | 2 |
-| Clue board Director, kombinasi, pinpoint | 3 |
-| Tuduhan + batas percobaan (logikanya sudah ada, UI-nya belum) | 4 |
+| Pemisahan info per role end to end, tuduhan + batas percobaan di UI | 4 |
 | Lobby lengkap, preferensi role, NPC, AFK/rejoin | 5 |
 | Case 0, story case #1, ping wheel final | 6 |
 
-Status tiap butir MVP P0 beserta buktinya ada di `docs/rilis.md` bagian 2.
+Utang yang sudah diketahui dari minggu 3, dengan alasan masing-masing:
+
+| Utang | Kenapa belum |
+|---|---|
+| Map panel menggambar chip pinpoint berlabel, bukan marker di dunia | Data kasus belum punya koordinat dunia untuk objek (itu scope minggu 2) |
+| Marka pinpoint belum sampai ke Searcher sebagai objek di lokasi | `Pinpoint` sudah dikirim ke Searcher dan Director; penempatan marker di dunia menyusul bersama lokasi |
+
 Daftar lengkap utang teknis beserta risikonya ada di `docs/arsitektur.md`
 bagian 9.
 

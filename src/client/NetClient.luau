@@ -31,6 +31,9 @@ export type Bound = {
 	RequestHint: RemoteEvent,
 	ConfirmAccusation: RemoteEvent,
 	PlacePiece: RemoteEvent,
+	MarkContradiction: RemoteEvent,
+	ContradictionResult: RemoteEvent,
+	TablePreview: RemoteEvent,
 }
 
 -- Menunggu seluruh remote muncul. Dipanggil sekali di awal; kalau salah satu
@@ -62,6 +65,9 @@ function NetClient.bind(shared: Instance): Bound
 		RequestHint = waitFor("RequestHint"),
 		ConfirmAccusation = waitFor("ConfirmAccusation"),
 		PlacePiece = waitFor("PlacePiece"),
+		MarkContradiction = waitFor("MarkContradiction"),
+		ContradictionResult = waitFor("ContradictionResult"),
+		TablePreview = waitFor("TablePreview"),
 	}
 end
 
@@ -104,6 +110,16 @@ end
 -- PRD §8: hint butuh persetujuan 2 role, jadi ini permintaan, bukan aksi.
 function NetClient.requestHint(bound: Bound): ()
 	bound.RequestHint:FireServer()
+end
+
+-- PRD §4: Director menandai Kontradiksi antara pernyataan saksi dan bukti.
+--
+-- Yang dikirim hanya nomor pernyataan. Client tidak pernah tahu `lie` maupun
+-- `contradicted_by` (keduanya dibuang di `CaseLoader.projectForRole`),
+-- jadi tidak ada yang bisa ditebak dari sisi client: server yang memeriksa
+-- apakah pernyataan itu bohong DAN bukti pembantahnya sudah dikumpulkan.
+function NetClient.markContradiction(bound: Bound, statementId: number): ()
+	bound.MarkContradiction:FireServer(statementId)
 end
 
 -- PRD §15: pelepasan satu potongan di meja puzzle.
