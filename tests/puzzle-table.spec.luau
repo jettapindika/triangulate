@@ -217,3 +217,106 @@ Harness.equal(PuzzleTable.remoteMessages("on_release", 60, 1), 1, "jalur B mengi
 Harness.throws(function()
 	PuzzleTable.remoteMessages("jalur_tidak_ada", 60, 1)
 end, "mode drag tak dikenal ditolak, bukan diam-diam dianggap nol")
+
+Harness.suite("PuzzleTable: gridFor")
+
+Harness.equal({ PuzzleTable.gridFor("torn_doc") }, { 4, 4 }, "torn_doc 4x4")
+Harness.equal({ PuzzleTable.gridFor("timeline") }, { 4, 2 }, "timeline 4x2")
+Harness.equal({ PuzzleTable.gridFor("cipher") }, { 3, 3 }, "cipher 3x3")
+Harness.equal({ PuzzleTable.gridFor("puzzle_hantu") }, { nil, nil }, "tipe tak dikenal -> nil")
+
+for _, puzzleType in { "torn_doc", "timeline", "cipher" } do
+	local cols, rows = PuzzleTable.gridFor(puzzleType)
+	Harness.check(
+		(cols :: number) <= PuzzleTable.MAX_GRID and (rows :: number) <= PuzzleTable.MAX_GRID,
+		string.format("grid %s menghormati batas %dx%d PRD §15", puzzleType, PuzzleTable.MAX_GRID, PuzzleTable.MAX_GRID)
+	)
+end
+
+Harness.suite("PuzzleTable: applyDrop")
+
+-- Meja 4x4 dengan 16 potongan, sama seperti yang diukur S0.1/S0.2.
+local function scattered(): PuzzleTable.State
+	local seed = 0
+	local function rng(): number
+		seed += 1
+		return (seed * 0.37) % 1
+	end
+	local regions: { number } = {}
+	for index = 0, 15 do
+		table.insert(regions, index)
+	end
+	return PuzzleTable.scatter(
+		PuzzleTable.newState("torn_doc:ev_schedule", PuzzleTable.newBoard(4, 4, 8, 8), regions),
+		rng
+	)
+end
+
+local tableState = scattered()
+Harness.equal(PuzzleTable.solvedCount(tableState), 0, "meja teracak tidak punya potongan yang sudah benar")
+
+-- Potongan 0 bertarget sel (0,0); pusatnya di ternormalisasi (0.125, 0.125).
+local piece0Id = tableState.pieces[1].id
+local dropPayload, dropSolved = PuzzleTable.applyDrop(tableState, piece0Id, 0.125, 0.125)
+Harness.ok(dropPayload.accepted, "drop tepat di pusat sel tujuan diterima")
+Harness.check(not dropSolved, "satu potongan benar belum menyelesaikan puzzle")
+Harness.equal(PuzzleTable.solvedCount(tableState), 1, "hitungan potongan benar naik setelah drop diterima")
+Harness.near(dropPayload.x :: number, 0.5, "payload membawa posisi otoritatif x")
+Harness.near(dropPayload.y :: number, 0.5, "payload membawa posisi otoritatif y")
+
+-- Sudut sel jauhnya 0,707 sel, di luar SNAP_TOLERANCE 0,5.
+local beforeX = tableState.pieces[2].pos.x
+local missPayload = PuzzleTable.applyDrop(tableState, tableState.pieces[2].id, 0.25, 0.25)
+Harness.check(not missPayload.accepted, "drop di sudut sel ditolak")
+Harness.near(tableState.pieces[2].pos.x, beforeX, "potongan yang ditolak kembali ke posisi sah terakhirnya")
+
+-- Potongan yang sengaja ditaruh di sel yang salah tetap diterima sebagai
+-- penempatan, tetapi tidak dihitung sebagai benar.
+local wrongPayload = PuzzleTable.applyDrop(tableState, tableState.pieces[3].id, 0.875, 0.875)
+Harness.ok(wrongPayload.accepted, "drop di sel yang bukan tujuan tetap sah secara aturan")
+Harness.equal(PuzzleTable.solvedCount(tableState), 1, "drop di sel yang salah tidak dihitung benar")
+
+-- Payload penempatan tidak boleh membawa target atau correct.
+local placementKeys: { string } = {}
+for key in dropPayload do
+	table.insert(placementKeys, key)
+end
+table.sort(placementKeys)
+Harness.equal(
+	placementKeys,
+	{ "accepted", "piece_id", "placed", "x", "y" },
+	"payload penempatan tidak membawa target atau correct"
+)
+
+Harness.check(
+	not PuzzleTable.applyDrop(tableState, "potongan:hantu", 0.125, 0.125).accepted,
+	"drop untuk id potongan tak dikenal ditolak"
+)
+Harness.check(
+	not PuzzleTable.applyDrop(tableState, piece0Id, 0 / 0, 0.125).accepted,
+	"drop dengan NaN ditolak, bukan menghasilkan sel yang tampak sah"
+)
+Harness.check(
+	not PuzzleTable.applyDrop(tableState, piece0Id, math.huge, 0.125).accepted,
+	"drop dengan infinitas ditolak"
+)
+
+-- Jari yang keluar bidang dijepit ke tepi meja, bukan ditolak.
+local edgePayload = PuzzleTable.applyDrop(tableState, tableState.pieces[4].id, 2.5, -1.5)
+Harness.ok(edgePayload.accepted, "drop di luar bidang dijepit ke sel tepi dan diterima")
+
+-- Menyelesaikan seluruh meja harus menghasilkan solved = true.
+local finish = scattered()
+local solvedPayload = nil
+for _, piece in finish.pieces do
+	local target = piece.target
+	solvedPayload = PuzzleTable.applyDrop(
+		finish,
+		piece.id,
+		(target.col + 0.5) / finish.board.cols,
+		(target.row + 0.5) / finish.board.rows
+	)
+end
+Harness.equal(PuzzleTable.solvedCount(finish), 16, "seluruh 16 potongan bisa diselesaikan lewat applyDrop")
+Harness.ok((solvedPayload :: { [string]: any }).accepted, "drop terakhir diterima")
+Harness.ok(PuzzleTable.isSolved(finish), "meja selesai setelah seluruh potongan benar")

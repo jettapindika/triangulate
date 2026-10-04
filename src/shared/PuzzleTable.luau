@@ -411,6 +411,105 @@ function PuzzleTable.rayPlaneY(
 end
 
 --[[
+	Ukuran grid per tipe puzzle bukti (PRD §4: torn_doc, timeline, cipher).
+
+	Kenapa di sini dan bukan di data kasus: `data/cases/*.json` belum punya
+	tempat untuk menyatakan grid -- skema node di `schema/case.schema.json`
+	(`additionalProperties: false`) hanya mengenal `puzzle`, dan mengubah skema
+	itu bukan milik issue ini. Sampai skema punya field `grid` per node bukti,
+	tipe puzzle adalah satu-satunya sumber yang tersedia, jadi pemetaannya
+	tinggal di sini.
+
+	`torn_doc` 4x4 = 16 potongan, angka yang sama dengan yang diukur S0.1 dan
+	S0.2 di `docs/spike-minggu-0.md`. `timeline` dan `cipher` belum dirangkai
+	end to end, jadi ukurannya `ASUMSI` awal yang menunggu playtest (PRD §19).
+]]
+local GRID_FOR_TYPE: { [string]: { cols: number, rows: number } } = {
+	torn_doc = { cols = 4, rows = 4 },
+	timeline = { cols = 4, rows = 2 },
+	cipher = { cols = 3, rows = 3 },
+}
+
+--[[
+	Ukuran grid untuk sebuah tipe puzzle. Mengembalikan `nil` bila tipe tidak
+	dikenal -- pemanggil yang memutuskan apa artinya itu, bukan modul ini.
+]]
+function PuzzleTable.gridFor(puzzleType: string): (number?, number?)
+	local grid = GRID_FOR_TYPE[puzzleType]
+	if grid == nil then
+		return nil, nil
+	end
+	return grid.cols, grid.rows
+end
+
+local function isFinite(value: number): boolean
+	return value == value and value ~= math.huge and value ~= -math.huge
+end
+
+--[[
+	Jalur masuk satu drop, dari sudut pandang SERVER.
+
+	Ini komposisi `normalizedToPoint` -> `resolveDrop` -> `place`, yaitu seluruh
+	keputusan penempatan dalam satu panggilan. Dipanggil server pada remote
+	`PlacePiece`; client memanggil jalur yang sama untuk prediksi lokal, tetapi
+	yang mengikat adalah hasil di server.
+
+	`u` dan `v` adalah posisi jari ternormalisasi [0,1] terhadap bidang meja,
+	BUKAN indeks sel. Ini disengaja: kalau client boleh mengirim sel, client
+	boleh mengklaim penempatan di mana pun tanpa pernah menyentuh layar di
+	sana. Dengan kirim posisi, server masih bisa menolak drop yang meleset lebih
+	dari `SNAP_TOLERANCE`.
+
+	Mengembalikan `(payload, solved)`; `payload.accepted` false berarti drop
+	ditolak dan potongan kembali ke posisi sah terakhirnya. `solved` true berarti
+	puzzle selesai SETELAH drop ini diterapkan.
+]]
+function PuzzleTable.applyDrop(
+	state: State,
+	pieceId: string,
+	u: number,
+	v: number,
+	tolerance: number?
+): ({ [string]: any }, boolean)
+	if not (isFinite(u) and isFinite(v)) then
+		-- NaN atau infinitas tidak boleh sampai ke `math.floor`: hasilnya bukan
+		-- error, melainkan sel yang tampak sah. Drop seperti ini ditolak.
+		return PuzzleTable.placementPayload(state, pieceId, false), false
+	end
+
+	local piece: Piece? = nil
+	for _, candidate in state.pieces do
+		if candidate.id == pieceId then
+			piece = candidate
+			break
+		end
+	end
+	if piece == nil then
+		return PuzzleTable.placementPayload(state, pieceId, false), false
+	end
+
+	-- Jari yang keluar bidang dijepit ke tepi, bukan ditolak: menyeret potongan
+	-- melewati tepi meja adalah hal yang wajar dilakukan pemain.
+	--
+	-- Jepitannya adalah pusat sel tepi, bukan tepi bidang. Kalau dijepit ke tepi
+	-- bidang, jari yang keluar meja selalu mendarat tepat di sudut sel -- jarak
+	-- 0,707 sel, di luar toleransi -- sehingga menyeret ke luar justru SELALU
+	-- ditolak. Menjepit ke pusat sel tepi membuat "keluar meja" berarti "sel
+	-- tepi terdekat", yang itu yang dimaksud pemain.
+	local halfCol = 0.5 / state.board.cols
+	local halfRow = 0.5 / state.board.rows
+	local clampedU = math.clamp(u, halfCol, 1 - halfCol)
+	local clampedV = math.clamp(v, halfRow, 1 - halfRow)
+	local point = PuzzleTable.normalizedToPoint(state.board, clampedU, clampedV)
+
+	local lastLegal = piece.pos
+	local cell = PuzzleTable.resolveDrop(state.board, point, lastLegal, tolerance)
+	PuzzleTable.place(state, pieceId, cell, lastLegal)
+
+	return PuzzleTable.placementPayload(state, pieceId, cell ~= nil), PuzzleTable.isSolved(state)
+end
+
+--[[
 	Menghitung jumlah pesan remote yang dibutuhkan dua jalur drag untuk satu
 	potongan yang digerakkan selama `frames` frame.
 
