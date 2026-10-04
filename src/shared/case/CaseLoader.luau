@@ -271,11 +271,16 @@ function CaseLoader.projectForRole(case: any, variantId: string, role: string): 
 
 	if spec.includeStatements and type(case.statements) == "table" then
 		local statements = {}
-		for _, statement in ipairs(case.statements) do
+		for index, statement in ipairs(case.statements) do
 			-- Hanya pernyataan yang berlaku di varian sesi ini. Pelaku berbeda
 			-- tiap cabang, jadi pernyataan cabang lain akan membocorkan cabang.
 			if CaseGraph.statementAppliesTo(statement, variantId) then
+				-- `id` = indeks 1-based di `case.statements`. Itu identitas yang
+				-- dipakai client saat menandai Kontradiksi (`MarkContradiction`
+				-- membawa angka ini), dan `who` tidak bisa jadi identitas:
+				-- `gallery_01.json` punya dua pernyataan `guard`.
 				table.insert(statements, {
+					id = index,
 					who = statement.who,
 					text = statement.text,
 				})

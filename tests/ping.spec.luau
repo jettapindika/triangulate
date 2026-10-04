@@ -64,21 +64,17 @@ end
 
 -- Frasa milik role lain tidak boleh punya label untuk role ini: itu jalur
 -- menyiarkan frasa yang tidak ada di roda pemain.
+Harness.equal(PingPhrases.labelFor("Searcher", "target"), nil, "frasa role lain tidak punya label")
 Harness.equal(
-	PingPhrases.labelFor("Searcher", "target"),
+	PingPhrases.labelFor("Searcher", "teks_bebas"),
 	nil,
-	"frasa role lain tidak punya label"
+	"id tak dikenal tidak punya label"
 )
-Harness.equal(PingPhrases.labelFor("Searcher", "teks_bebas"), nil, "id tak dikenal tidak punya label")
 Harness.equal(PingPhrases.labelFor("Searcher", ""), nil, "id kosong tidak punya label")
 
 -- Payload ping datang dari jaringan: tipe apa pun bisa masuk. Server harus
 -- menolaknya tanpa error, bukan melempar dan mematikan handler remote.
-Harness.equal(
-	PingPhrases.labelFor("Searcher", 1 :: any),
-	nil,
-	"id non-string tidak punya label"
-)
+Harness.equal(PingPhrases.labelFor("Searcher", 1 :: any), nil, "id non-string tidak punya label")
 -- Role nil diperlakukan seperti role tak dikenal: frasa universal tetap punya
 -- label, karena `forRole` juga memberikannya ke role tak dikenal. Server tetap
 -- menolak ping tanpa role di `handlePing` -- labelnya bukan gerbang.

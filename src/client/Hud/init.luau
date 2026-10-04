@@ -6,11 +6,13 @@
 -- pengetahuan tentang varian kasus. Kalau sebuah nilai tidak datang lewat
 -- remote, client tidak menampilkannya -- itu perilaku yang benar, bukan bug.
 --
--- Tampilan yang dibangun di sini: Role Card (PRD §9), status sesi, feedback
--- tuduhan (PRD §5), form tuduhan (PRD §5), rekap Cold Case (PRD §5), ping
--- wheel + toast (PRD §7), Report Card (PRD §7), dan Target Marker dengan
--- kompas (PRD §7). Meja puzzle dan clue board adalah scope minggu 1-3
--- (PRD §17) dan belum ada di sini.
+-- Tampilan yang dibangun di sini adalah yang bisa dibangun sekarang: Role Card
+-- (PRD §9), status sesi, feedback tuduhan (PRD §5), form tuduhan (PRD §5),
+-- rekap Cold Case (PRD §5), ping wheel + toast (PRD §7), Report Card (PRD §7),
+-- dan Target Marker dengan kompas (PRD §7). Meja puzzle dan clue board punya
+-- modulnya sendiri -- `Table` (minggu 1, PRD §17) dan `Board` (minggu 3) -- dan
+-- sengaja tidak digabung ke HUD: keduanya menempati layar penuh, dan `Table`
+-- memindahkan kamera.
 
 local PingWheel = require(script.PingWheel)
 

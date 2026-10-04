@@ -4,16 +4,17 @@ Rujukan: PRD v0.2 §15, §16, §17. Dokumen ini mencatat apa yang benar-benar
 jalan setelah minggu 0-2, apa yang belum, dan risiko teknis yang terbukti dari
 spike — bukan daftar rencana.
 
-Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (1029 assertion,
+Yang bisa dijalankan ulang ada di repo: `lune run tests/run.luau` (1055 assertion,
 20 berkas spec), `lune run tests/leak-sweep.spec.luau`,
 `lune run tools/bukti-rantai-a.luau` (bukti rantai A→bukti, keluaran log
 berurutan), dan `lune run tools/spike-s02-protokol.luau`. Angka di bawah berasal
 dari keempatnya plus `docs/spike-minggu-0-hasil.md`.
 
-Angka 1029 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main`, EXTA-57
+Angka 1055 adalah hasil terakhir, setelah pekerjaan minggu 6 di `main`, EXTA-57
 (minggu 4), dan integrasi EXTA-55 (minggu 2: `CaseSource`, `LocationService`,
-`Location/init.luau`) yang menambahkan `case-source.spec` dan `location.spec`.
-Sebelumnya 967, dan 566 sebelum EXTA-57.
+`Location/init.luau`, `case-source.spec`, `location.spec`) + EXTA-56 (clue board
+Director, `accusation-gate.spec`). Sebelumnya 1029, 967 sebelum itu, dan 566
+saat catatan ini pertama ditulis.
 
 ## 1. Apa yang sudah jalan
 
@@ -24,7 +25,7 @@ Sebelumnya 967, dan 566 sebelum EXTA-57.
 | §15 interpolasi di client | `PuzzleTable.interpolate` dipanggil tiap `RenderStepped` | `src/client/Table/init.luau:310` |
 | §4 drag-and-snap | Ambil potongan, gerakkan mengikuti jari, lepas → snap ke sel terdekat | `grab`/`drag`/`release` di `src/client/Table/init.luau` |
 | §4 tiga tipe puzzle end to end | `torn_doc` 16 potongan, `timeline` 8, `cipher` 9 — ketiganya dirakit sampai `solved` lewat jalur server | `tests/puzzle-types.spec.luau`; `tests/gate-minggu-0.spec.luau` suite 3 untuk rantai `torn_doc` di `gallery_01.json` |
-| §15 server-authoritative | Resep deduksi, penilaian tuduhan, dan penyelesaian meja semuanya di server | `src/server/init.server.luau`; `tests/leak-sweep.spec.luau` 30 pasangan view×role, 0 temuan |
+| §15 server-authoritative | Resep deduksi, penilaian tuduhan, dan penyelesaian meja semuanya di server | `src/server/init.server.luau`; `tests/leak-sweep.spec.luau` 34 pasangan view×role, 0 temuan |
 | §4 Clue Card dari bukti | Meja selesai → `yields` → `ClueCard` ke Director, Handler, Searcher dengan proyeksi per role | `handlePlacePiece`, `src/server/init.server.luau:547` |
 | §16 data-driven | Tipe puzzle dibaca dari `data/cases/gallery_01.json`; menambah kasus tidak menyentuh kode | `PuzzleTableService.build` |
 | §15 telemetri | Event `input` per penempatan potongan, plus `input` untuk ping dan `deduction` untuk deduksi; `variant` ikut tercatat per sesi | `TelemetryService.record` di `handlePlacePiece`, `handlePing`, `handleDeduce`; `TelemetryService.summary().variant` |
@@ -42,6 +43,10 @@ Sebelumnya 967, dan 566 sebelum EXTA-57.
 | §6 mini-aksi Searcher | Senter UV (0 dtk), buka laci dengan hold (1,2 dtk), lockpick (2,5 dtk) | `Config.SEARCHER_ACTIONS`; durasi diverifikasi server terhadap jamnya, `LocationService.completeInspect` |
 | §6 objek ambient | `amb_poster` (uv) dan `amb_bench` (drawer), `gives_key = nil` | `LocationService.AMBIENT.gallery`; diuji di `tests/location.spec.luau` |
 | §4 langkah 6 gerbang `unlocks` | `obj_ledger` ada di dunia tetapi tidak bisa diperiksa sampai `ded_c_culprit_1` selesai | `LocationService.isInspectable`; log `deduksi 'ded_c_culprit_1' membuka objek 'obj_ledger'` |
+| §4 clue board Director | Layar 2D mobile-first: kartu Clue, pernyataan, peta pinpoint, Table Preview; drag kartu ke kartu mengirim kombinasi. Hanya dipasang untuk role Director | `src/client/Board/init.luau`; `ensureBoard` di `src/client/init.client.luau`; aturannya diuji di `tests/accusation-gate.spec.luau` dan `tests/location-map.spec.luau` |
+| §4 Kontradiksi | Director menandai pernyataan yang dibantah bukti; server memeriksa `contradicted_by` + bukti pembantahnya sudah dikumpulkan, client hanya menerima nomor | `AccusationGate.markContradiction`; `handleMarkContradiction` |
+| §5 N Deduksi Kunci dari data | N dibaca dari angka `key_deductions` kasus, bukan dihitung dari rumus 65%; gerbang form = N deduksi kunci + 1 kontradiksi | `AccusationGate.keyDeductionsDone`; `gateState`; `handleAccuse` |
+| §7 Table Preview | Director melihat progres meja Handler (read-only) tanpa bertanya; yang menyeberang hanya hitungan, bukan potongan | `tablePreviewEntries`; `Net.CLIENT_VIEWS.table_preview` |
 
 Ketiga tipe puzzle punya grid sendiri (`torn_doc` 4×4, `timeline` 4×2, `cipher`
 3×3) dan ketiganya kini dirakit **end to end** sampai `solved` di
@@ -85,11 +90,15 @@ ping wheel akan terhitung menganggur.
   punya UI, `preferences` masih `Roles.ALL` (tanpa preferensi). Daftar lengkap
   ada sebagai komentar di `src/server/init.server.luau` bagian 7.
 - **NPC Director terpandu** — P1 (PRD §16).
-- **UI clue board Director** — minggu 3 (EXTA-56). Mesinnya sudah ada
-  (`DeductionEngine.combine`, `handleDeduce`, node `ded_*` di data kasus), yang
-  belum adalah layar untuk menyusun Clue Card dan menandai Kontradiksi.
-  Mekanisme penandaan kontradiksi di server dan proyeksinya sudah selesai
-  (EXTA-57); HUD belum memanggil `NetClient.markContradiction`.
+- **Form tuduhan (UI Pelaku/Motif/Cara)** — minggu 4. Gerbangnya sudah
+  dihitung server dan diuji (`gateState`, `handleAccuse` menolak tuduhan
+  sebelum N), tetapi formnya sendiri belum ada; HUD masih menampilkan satu
+  baris teks hasil tuduhan.
+- **Clue board dan Kontradiksi** — minggu 3. **Sudah ada** (§1):
+  `src/client/Board/init.luau` dan `AccusationGate`, dengan gerbang deduksi +
+  kontradiksi yang divalidasi server. Yang belum: Searcher tidak melihat
+  pinpoint sebagai marker di dunia (lihat §7 utang #8 di
+  `docs/arsitektur.md`).
 
 Catatan: baris *"Case 0 dan story case — minggu 6"* sudah tidak berlaku; dua
 berkas kasusnya ada dan lolos validator (§1). Yang **belum** ada dari minggu 6
@@ -327,8 +336,8 @@ dihapus dari payload proyeksi.
 rusak, tetapi **tidak** menyentuh `case_00.json` maupun `kersana_01.json`. Jadi
 sebelum ini kedua kasus minggu 6 hanya dijaga oleh perintah CLI manual: rusak
 satu berkas, suite tetap hijau. Dua baris ditambahkan ke tabel `expectations`
-supaya keduanya ikut digerbang (869 assertion saat itu; 1029 sekarang, setelah
-EXTA-57 dan integrasi EXTA-55).
+supaya keduanya ikut digerbang (869 assertion saat itu; 1055 sekarang, setelah
+EXTA-57, integrasi EXTA-55, dan EXTA-56).
 
 Celah yang sama masih ada di tempat lain: `tools/validate_case.luau` menerima
 daftar berkas dari argumen, jadi kasus baru **tidak** otomatis ikut kecuali

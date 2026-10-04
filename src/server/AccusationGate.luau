@@ -25,6 +25,26 @@
 
 local AccusationGate = {}
 
+--[[
+	Pesan penolakan penandaan Kontradiksi yang BOLEH dibaca pemain (PRD §4).
+
+	Dua pesan saja, dan itu disengaja: pernyataan yang tidak dibantah bukti mana
+	pun dan pernyataan yang bukti pembantahnya belum dikumpulkan memberi pesan
+	yang SAMA. Kalau keduanya dibedakan, Director bisa menemukan pembohong
+	dengan mencoba satu per satu pernyataan sampai pesannya berubah -- oracle
+	yang menghapus justru bagian berpikirnya.
+
+	Pesan "sudah ditandai" aman dipisah: ia hanya mengulang apa yang client
+	sudah lakukan sendiri, jadi tidak mengungkap apa pun tentang kebenaran
+	pernyataannya.
+
+	Ini TERPISAH dari `reason` yang dikembalikan `AccusationGate.markContradiction`:
+	yang itu untuk log server dan menyebut id pernyataan sekaligus id Clue Card
+	yang benar, sehingga tidak boleh menyeberang ke client.
+]]
+AccusationGate.REJECT_REASON = "pernyataan itu belum terbantah oleh bukti yang sudah dikumpulkan"
+AccusationGate.ALREADY_MARKED = "kontradiksi itu sudah ditandai"
+
 export type Config = {
 	contradictionsRequired: number,
 	cleanupSeconds: number,
@@ -162,7 +182,8 @@ function AccusationGate.markContradiction(
 	session: Session,
 	statementId: string,
 	statement: { contradicted_by: string? }?,
-	clueId: string
+	clueId: string,
+	obtained: { [string]: boolean }
 ): (boolean, boolean, string?)
 	if statement == nil then
 		return false, false, string.format("pernyataan '%s' tidak dikenal", statementId)
@@ -181,6 +202,14 @@ function AccusationGate.markContradiction(
 		return false,
 			false,
 			string.format("pernyataan '%s' tidak dibantah '%s'", statementId, clueId)
+	end
+	-- PRD §4: Kontradiksi adalah hasil kerja tim, bukan tebakan. Bukti
+	-- pembantahnya harus SUDAH dikumpulkan (`obtained` diisi glue saat meja
+	-- bukti selesai dirakit); tanpa syarat ini Director bisa menandai pernyataan
+	-- mana pun sejak detik pertama dan gerbang tuduhan (PRD §5) terbuka tanpa
+	-- satu pun deduksi.
+	if obtained[clueId] ~= true then
+		return false, false, string.format("bukti '%s' belum dikumpulkan", clueId)
 	end
 
 	session.markedStatements[statementId] = true
