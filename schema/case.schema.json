@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jettapindika/triangulate/schema/case.schema.json",
+  "title": "Triangulate Case",
+  "description": "Skema data satu kasus Triangulate (PRD v0.2 §4, §5, §10, §15). Bentuk saja; aturan lintas-field (siklus, rantai buntu, gerbang N) ditegakkan oleh CaseValidator.",
+  "type": "object",
+  "required": ["case_id", "location", "variants", "nodes", "statements", "briefing", "solution"],
+  "additionalProperties": false,
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Id stabil kasus, mis. \"gallery_01\" (PRD §10)."
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "case_type": {
+      "enum": ["standard", "daily", "case0"],
+      "description": "Menentukan N Deduksi Kunci (PRD §5): standard 4, daily 3, case0 2."
+    },
+    "key_deductions": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "N Deduksi Kunci yang membuka form tuduhan. Harus sama dengan panjang required_deductions tiap varian dan tidak melebihi jumlah deduksi yang bisa dicapai."
+    },
+    "location": { "type": "string", "minLength": 1 },
+    "suspects": {
+      "$ref": "#/$defs/idList",
+      "description": "Ruang pilihan Pelaku untuk form tuduhan Director (PRD §5). Kandidat, bukan jawaban."
+    },
+    "motives": {
+      "$ref": "#/$defs/idList",
+      "description": "Ruang pilihan Motif untuk form tuduhan Director (PRD §5). Kandidat, bukan jawaban."
+    },
+    "methods": {
+      "$ref": "#/$defs/idList",
+      "description": "Ruang pilihan Cara untuk form tuduhan Director (PRD §5). Kandidat, bukan jawaban. Wajib memuat setiap nilai `variants[].method`."
+    },
+    "briefings": {
+      "type": "object",
+      "description": "Role Card per role untuk scaffold server (PRD §9). Terpisah dari `briefing`: `briefing` adalah teks prosa yang divalidasi CaseValidator, `briefings` adalah bentuk terstruktur yang diproyeksikan Net.forRole view `briefing` (kunci role berhuruf besar).",
+      "required": ["Searcher", "Handler", "Director"],
+      "additionalProperties": false,
+      "properties": {
+        "Searcher": { "$ref": "#/$defs/roleCard" },
+        "Handler": { "$ref": "#/$defs/roleCard" },
+        "Director": { "$ref": "#/$defs/roleCard" }
+      }
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Cabang solusi. Seed server memilih satu (PRD §10).",
+      "items": { "$ref": "#/$defs/variant" }
+    },
+    "briefing": { "$ref": "#/$defs/briefing" },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Clue Graph: graf dependensi tanpa siklus (PRD §4).",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "statements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/statement" }
+    },
+    "solution": {
+      "type": "object",
+      "description": "Jalur solusi per varian. SERVER-ONLY: tidak pernah dikirim ke client (PRD §15).",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/solutionEntry" }
+    }
+  },
+  "$defs": {
+    "idList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "variant": {
+      "type": "object",
+      "required": ["variant_id", "culprit", "motive", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "variant_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "culprit": { "type": "string", "minLength": 1, "description": "Pelaku. SERVER-ONLY." },
+        "motive": { "type": "string", "minLength": 1, "description": "Motif. SERVER-ONLY." },
+        "method": { "type": "string", "minLength": 1, "description": "Cara. SERVER-ONLY." }
+      }
+    },
+    "briefing": {
+      "type": "object",
+      "required": ["searcher", "handler", "director"],
+      "additionalProperties": false,
+      "description": "Teks briefing per role (PRD §9). Tiap role hanya menerima miliknya.",
+      "properties": {
+        "searcher": { "type": "string", "minLength": 1 },
+        "handler": { "type": "string", "minLength": 1 },
+        "director": { "type": "string", "minLength": 1 }
+      }
+    },
+    "roleCard": {
+      "type": "object",
+      "required": ["case_id", "location", "objective", "knowns", "unknowns"],
+      "additionalProperties": false,
+      "description": "Role Card (PRD §9): \"Kamu tahu apa / Tidak tahu apa / Tugas pertamamu\". Fieldnya harus persis sama dengan allowlist Net.CLIENT_VIEWS.briefing, karena Net.project menyalin nilai apa adanya.",
+      "properties": {
+        "case_id": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "knowns": { "$ref": "#/$defs/idList" },
+        "unknowns": { "$ref": "#/$defs/idList" },
+        "target": { "type": "string", "minLength": 1, "description": "Id node pertama yang harus dikerjakan role ini. Searcher/Handler." },
+        "statements": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Pernyataan saksi untuk Director. WAJIB sudah bersih: `lie` dan `contradicted_by` adalah field rahasia (Net.SECRET_FIELDS) dan Net.project menyalin nilai ini apa adanya.",
+          "items": {
+            "type": "object",
+            "required": ["who", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "who": { "type": "string", "minLength": 1 },
+              "text": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["object", "evidence", "clue_card", "deduction"] },
+        "label": { "type": "string" },
+        "variants": {
+          "$ref": "#/$defs/idList",
+          "description": "Bila ada, node hanya aktif di varian tersebut. Node tanpa field ini aktif di semua varian."
+        },
+        "gives_key": { "type": "string", "minLength": 1, "description": "Wajib untuk type=object. Kunci yang diberikan ke Handler." },
+        "puzzle": { "enum": ["torn_doc", "timeline", "cipher"], "description": "Wajib untuk type=evidence (tipe puzzle MVP, PRD §4)." },
+        "needs": { "$ref": "#/$defs/idList", "description": "Wajib untuk type=evidence (id kunci) dan type=deduction (id Clue Card, minimal 2)." },
+        "yields": { "type": "string", "minLength": 1, "description": "Wajib untuk type=evidence. Harus sama dengan id Clue Card yang dihasilkan." },
+        "source": { "type": "string", "minLength": 1, "description": "Wajib untuk type=clue_card. Id node evidence sumbernya." },
+        "supports": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["culprit", "motive", "method"] },
+          "description": "Wajib untuk type=deduction. Field tuduhan yang ditopang deduksi ini (PRD §5)."
+        },
+        "unlocks": { "$ref": "#/$defs/idList", "description": "Node yang terbuka setelah deduksi ini selesai. Diperlakukan sebagai tepi dependensi." }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "object" } }, "required": ["type"] },
+          "then": { "required": ["gives_key"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "evidence" } }, "required": ["type"] },
+          "then": { "required": ["puzzle", "yields"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "clue_card" } }, "required": ["type"] },
+          "then": { "required": ["source"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "deduction" } }, "required": ["type"] },
+          "then": { "required": ["needs", "supports"] }
+        }
+      ]
+    },
+    "statement": {
+      "type": "object",
+      "required": ["who", "text", "lie"],
+      "additionalProperties": false,
+      "properties": {
+        "who": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1, "description": "Teks yang dibaca Director. Tidak memuat penanda bohong." },
+        "lie": { "type": "boolean", "description": "SERVER-ONLY." },
+        "contradicted_by": { "type": "string", "minLength": 1, "description": "Id Clue Card pembantah. Wajib bila lie=true. SERVER-ONLY." },
+        "variants": { "$ref": "#/$defs/idList", "description": "Bila ada, pernyataan hanya berlaku di varian tersebut." }
+      }
+    },
+    "solutionEntry": {
+      "type": "object",
+      "required": ["culprit", "motive", "method", "required_deductions"],
+      "additionalProperties": false,
+      "description": "SERVER-ONLY.",
+      "properties": {
+        "culprit": { "type": "string", "minLength": 1 },
+        "motive": { "type": "string", "minLength": 1 },
+        "method": { "type": "string", "minLength": 1 },
+        "required_deductions": {
+          "$ref": "#/$defs/idList",
+          "description": "Deduksi kunci yang membuka gerbang N. Panjangnya harus sama dengan key_deductions dan menutup ketiga field tuduhan."
+        }
+      }
+    }
+  }
+}
