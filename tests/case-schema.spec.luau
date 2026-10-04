@@ -39,6 +39,8 @@ Harness.suite("case-schema: validator")
 -- disimpan supaya perilaku validator terbukti, bukan diklaim.
 local expectations = {
 	{ path = "data/cases/gallery_01.json", ok = true },
+	{ path = "data/cases/case_00.json", ok = true },
+	{ path = "data/cases/kersana_01.json", ok = true },
 	{ path = "tests/fixtures/cycle.json", ok = false, code = "graph.cycle" },
 	{ path = "tests/fixtures/dead_end.json", ok = false, code = "graph.dead_end" },
 	{

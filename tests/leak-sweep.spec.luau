@@ -68,9 +68,24 @@ local function payloadFor(view: string, role: string): { [string]: any }
 		return {
 			id = "rc_1",
 			object_id = "obj_schedule",
+			label = "Jadwal jaga",
 			location = "staff_room",
 			image = "rbxassetid://0",
 			gives_key = "key_a",
+		}
+	elseif view == "target_marker" then
+		return {
+			target_id = "obj_schedule",
+			label = "Jadwal jaga",
+			bearing = 45,
+			culprit = solution.culprit,
+		}
+	elseif view == "ping" then
+		return {
+			from_role = "Handler",
+			phrase_id = "target",
+			label = "Cari benda bertanda ini",
+			lie = true,
 		}
 	elseif view == "accusation_result" then
 		return {
@@ -128,14 +143,16 @@ for view, byRole in Net.CLIENT_VIEWS do
 	end
 end
 
--- 7 view awal x 3 role = 21, ditambah dua view meja puzzle yang hanya untuk
+-- 9 view awal x 3 role = 27, ditambah dua view meja puzzle yang hanya untuk
 -- Handler dan Director (PRD §4: meja milik Handler; §8: Director boleh
--- mengambil alih puzzle manual di mode 2 pemain). Searcher tidak memegang meja
--- sama sekali, jadi pasangannya sengaja tidak ada -- dan `Net.forRole`
--- mengembalikan nil untuknya, yang berarti "jangan kirim".
+-- mengambil alih puzzle manual di mode 2 pemain), ditambah `target_marker`
+-- yang hanya punya entri Searcher dan Handler (PRD §7: marker dipasang Handler
+-- dan terlihat di HUD Searcher; Director tidak melihat dunia Searcher).
+-- Searcher tidak memegang meja sama sekali, jadi pasangannya sengaja tidak ada
+-- -- dan `Net.forRole` mengembalikan nil untuknya, yang berarti "jangan kirim".
 Harness.check(
-	pairsChecked == 25,
-	string.format("kebocoran: 9 view x role tersapu (terperiksa: %d)", pairsChecked)
+	pairsChecked == 30,
+	string.format("kebocoran: 11 view x role tersapu (terperiksa: %d)", pairsChecked)
 )
 
 Harness.suite("kebocoran: kontrol detektor")

@@ -50,12 +50,20 @@ local REMOTE_NAMES: { string } = {
 	"SubmitDeduction",
 	"Accuse",
 	"Ping",
+	"PingRelay",
+	"SetTarget",
 	"RequestHint",
 	"ConfirmAccusation",
 	"PlacePiece",
 }
 
 -- Remote yang arahnya server -> client.
+--
+-- `PingRelay` terpisah dari `Ping` karena arahnya berlawanan: `Ping` membawa
+-- frasa dari client ke server (PRD §7), sedangkan `PingRelay` membawa frasa itu
+-- kembali ke role lain. Menggabungkan keduanya jadi satu remote dua arah akan
+-- melanggar pemisahan arah yang diuji `tests/net.spec.luau` -- dan pemisahan itu
+-- yang membuat tiap kanal bisa punya validasi sendiri.
 local SERVER_TO_CLIENT: { [string]: boolean } = {
 	SessionState = true,
 	ClueCard = true,
@@ -66,6 +74,7 @@ local SERVER_TO_CLIENT: { [string]: boolean } = {
 	DeductionResult = true,
 	PuzzleState = true,
 	PiecePlaced = true,
+	PingRelay = true,
 }
 
 -- Remote yang arahnya client -> server. Setiap handler-nya wajib memvalidasi
@@ -77,6 +86,12 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	SubmitDeduction = true,
 	Accuse = true,
 	Ping = true,
+	-- PRD §7: "Target Marker: Handler menaruh ikon target." Marker dipasang
+	-- Handler, jadi arahnya client -> server, dan server yang meneruskannya ke
+	-- Searcher lewat `TargetMarker` (server -> client). `docs/arsitektur.md`
+	-- menggambar panah `H->>Srv: TargetMarker`; panah itu memang salah nama,
+	-- dan remote ini yang benar.
+	SetTarget = true,
 	RequestHint = true,
 	ConfirmAccusation = true,
 	PlacePiece = true,
@@ -132,10 +147,36 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 	},
 
 	-- PRD §7: Report Card = foto objek + tag lokasi otomatis.
+	--
+	-- `label` ikut karena `image` masih placeholder (`rbxassetid://0`, lihat
+	-- `docs/mvp-notes.md`): tanpa label, kartu laporan tidak bisa dibaca sama
+	-- sekali. Saat aset foto nyata ada, label tetap berguna sebagai alt text.
 	report_card = {
-		Searcher = { "id", "object_id", "location", "image" },
-		Handler = { "id", "object_id", "location", "image", "gives_key" },
-		Director = { "id", "object_id", "location", "image" },
+		Searcher = { "id", "object_id", "label", "location", "image" },
+		Handler = { "id", "object_id", "label", "location", "image", "gives_key" },
+		Director = { "id", "object_id", "label", "location", "image" },
+	},
+
+	-- PRD §7: "Target Marker: Handler menaruh ikon target yang muncul di HUD
+	-- Searcher dan arah kompas."
+	--
+	-- `bearing` adalah arah marker pada bidang lokasi dalam derajat (0 = utara
+	-- = -Z, searah jarum jam), dihitung server dari `LocationMap` -- client
+	-- tidak perlu tahu koordinat dunia mana pun. Handler menerima `target_id`
+	-- dan `label` saja: ia yang memasang marker, jadi ia tidak butuh arahnya
+	-- sendiri.
+	target_marker = {
+		Searcher = { "target_id", "label", "bearing" },
+		Handler = { "target_id", "label" },
+	},
+
+	-- PRD §7: ping wheel. Yang menyeberang hanya ID frasa dan labelnya dari
+	-- `PingPhrases` -- client tidak pernah mengirim atau menerima teks bebas.
+	-- `from_role` dipakai penerima untuk menampilkan siapa yang meming.
+	ping = {
+		Searcher = { "from_role", "phrase_id", "label" },
+		Handler = { "from_role", "phrase_id", "label" },
+		Director = { "from_role", "phrase_id", "label" },
 	},
 
 	-- PRD §5: feedback salah hanya "X dari 3 benar", tanpa menyebut field mana.

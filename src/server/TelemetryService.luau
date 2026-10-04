@@ -30,13 +30,26 @@ export type Session = {
 	startedAt: number,
 	-- Jendela keaktifan, dalam detik.
 	activityWindow: number,
+	-- PRD §10: "Seed server memilih cabang saat sesi dibuat."
+	--
+	-- SOP-02 langkah 12: varian yang dipilih WAJIB terekam di telemetri, karena
+	-- tanpa itu perbandingan "varian mana yang lebih sering buntu" tidak bisa
+	-- dihitung dari data sesi. Nilainya hanya hidup di server -- ia tidak
+	-- pernah masuk `Net.CLIENT_VIEWS` mana pun, karena id varian memberi tahu
+	-- client cabang mana yang sedang berjalan.
+	variant: string?,
 }
 
-function TelemetryService.newSession(startedAt: number, activityWindow: number?): Session
+function TelemetryService.newSession(
+	startedAt: number,
+	activityWindow: number?,
+	variant: string?
+): Session
 	return {
 		events = {},
 		startedAt = startedAt,
 		activityWindow = activityWindow or 5,
+		variant = variant,
 	}
 end
 
@@ -123,10 +136,18 @@ function TelemetryService.summary(
 			seconds_to_first_clue = TelemetryService.secondsToFirstClue(session, role),
 			inputs = #timestamps(session, role, "input"),
 			accusations = #timestamps(session, role, "accusation"),
+			-- `deduction` sudah ada di `EventKind` sejak awal tetapi belum
+			-- pernah dihitung; sekarang deduksi yang sah dicatat server, jadi
+			-- angkanya nyata. Tanpa ini, satu-satunya jejak deduksi adalah
+			-- pesan remote yang tidak pernah disimpan.
+			deductions = #timestamps(session, role, "deduction"),
 		}
 	end
 	return {
 		duration = untilT - session.startedAt,
+		-- SOP-02 langkah 12: varian ikut di ringkasan supaya rekaman sesi bisa
+		-- dipisah per cabang tanpa tabel lain.
+		variant = session.variant,
 		roles = byRole,
 	}
 end

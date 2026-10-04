@@ -36,6 +36,9 @@ require("./npc.spec")
 require("./puzzle-table.spec")
 require("./puzzle-table-service.spec")
 require("./gate-minggu-0.spec")
+require("./location-map.spec")
+require("./case-content.spec")
+require("./puzzle-types.spec")
 
 Harness.report()
 

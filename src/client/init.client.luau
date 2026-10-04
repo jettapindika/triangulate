@@ -48,15 +48,31 @@ local state: Hud.State = {
 	resolved = nil,
 	won = nil,
 	pendingConfirmation = nil,
+	marker = nil,
+	briefingTarget = nil,
 }
 
-local hud = Hud.mount(player, state, function(phraseId: string)
-	-- Validasi lokal ini bukan pengamanan -- server tetap memvalidasi ulang.
-	-- Gunanya hanya supaya client tidak mengirim ping yang pasti ditolak.
-	if state.role ~= nil and PingPhrases.isValid(state.role, phraseId) then
-		NetClient.ping(bound, phraseId)
-	end
-end)
+local hud = Hud.mount(player, state, {
+	onPing = function(phraseId: string)
+		-- Validasi lokal ini bukan pengamanan -- server tetap memvalidasi
+		-- ulang. Gunanya hanya supaya client tidak mengirim ping yang pasti
+		-- ditolak.
+		if state.role ~= nil and PingPhrases.isValid(state.role, phraseId) then
+			NetClient.ping(bound, phraseId)
+		end
+	end,
+	onReport = function(objectId: string)
+		-- PRD §7: Report Card. Client hanya mengirim id objeknya; tag lokasi
+		-- dan label dihitung server dari data kasus, sehingga pemain tidak
+		-- bisa memalsukan tag lokasi di clue board Director.
+		NetClient.report(bound, objectId)
+	end,
+	onSetTarget = function(targetId: string)
+		-- PRD §7: Handler menandai target. Client mengirim id; server memetakan
+		-- id itu ke benda di lokasi dan menghitung arah kompasnya.
+		NetClient.setTarget(bound, targetId)
+	end,
+})
 
 -- Briefing per role (PRD §9). Payload ini sudah diproyeksikan server untuk role
 -- pemain ini; field yang tidak ada di view-nya memang tidak dikirim.
@@ -70,6 +86,11 @@ bound.SessionState.OnClientEvent:Connect(function(payload: any)
 	end
 	if payload.phase ~= nil then
 		state.phase = payload.phase
+	end
+	-- PRD §7: target awal dari arsip. Handler menandainya supaya Searcher
+	-- melihat arah kompas. Disimpan agar tombol Tandai tahu apa yang dikirim.
+	if type(payload.target) == "string" then
+		state.briefingTarget = payload.target
 	end
 
 	-- Briefing awal dan pembaruan status datang lewat remote yang sama; yang
@@ -134,6 +155,68 @@ bound.PiecePlaced.OnClientEvent:Connect(function(payload: any)
 	local current = table_
 	if current ~= nil then
 		current.applyPlacement(payload)
+	end
+end)
+
+-- PRD §7: "Target Marker: Handler menaruh ikon target yang muncul di HUD
+-- Searcher dan arah kompas." Label dan arah datang dari server; client tidak
+-- menghitung keduanya.
+bound.TargetMarker.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	state.marker = {
+		target_id = payload.target_id,
+		label = payload.label,
+		bearing = payload.bearing,
+	}
+	hud.showMarker(payload)
+end)
+
+-- PRD §7: ping dari role lain. Teksnya sudah diputuskan server
+-- (`PingPhrases.labelFor`), jadi client tidak menyimpan salinan daftar frasa
+-- sendiri -- dua salinan akan menyimpang.
+bound.PingRelay.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	local from = tostring(payload.from_role or "?")
+	local text = payload.label
+	if type(text) ~= "string" then
+		return
+	end
+
+	hud.showPing(from, text)
+end)
+
+-- PRD §7: Report Card. Yang kembali sudah diperkaya server: label objek dan tag
+-- lokasi dari data kasus.
+bound.ReportCard.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	hud.showReport(payload)
+end)
+
+-- PRD §4: "Deduksi menaruh pinpoint baru di map dan membuka target baru."
+--
+-- Belum ada peta di client -- Director UI adalah scope minggu 3 (PRD §17) --
+-- jadi pinpoint ditampilkan sebagai baris teks, bukan sebagai marker di peta.
+-- Yang penting di sini: nilai `pinpoint` memang sampai ke client, dan client
+-- tidak mengarangnya.
+bound.DeductionResult.OnClientEvent:Connect(function(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	local pinpoint = payload.pinpoint
+	if type(pinpoint) == "string" then
+		hud.showPing("Clue board", string.format("Deduksi baru, pinpoint: %s", pinpoint))
+	else
+		hud.showPing("Clue board", "Deduksi baru selesai")
 	end
 end)
 

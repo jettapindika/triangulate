@@ -23,7 +23,10 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 local Roles = require(Shared.Roles)
+local PingPhrases = require(Shared.PingPhrases)
+local LocationMap = require(Shared.LocationMap)
 local CaseValidator = require(Shared.case.CaseValidator)
+local CaseGraph = require(Shared.case.CaseGraph)
 local PuzzleTable = require(Shared.PuzzleTable)
 
 local CaseLoader = require(script.CaseLoader)
@@ -157,6 +160,39 @@ local function fireToRole(remoteName: string, view: string, payload: { [string]:
 			local projected = Net.forRole(view, role, payload)
 			if projected ~= nil then
 				remote:FireClient(player, projected)
+			end
+		end
+	end
+end
+
+-- Sama seperti `fireToRole`, tetapi melewati satu pemain. Dipakai relay ping:
+-- pengirim tidak perlu menerima ping-nya sendiri, dan mengirimkannya akan
+-- membuat satu ping tampil dua kali di layar pengirim.
+local function fireToRoleExcept(
+	remoteName: string,
+	view: string,
+	payload: { [string]: any },
+	exceptUserId: number
+): ()
+	local remote = remotes[remoteName]
+	if remote == nil then
+		warn(string.format("[Triangulate] remote '%s' tidak terdaftar", remoteName))
+		return
+	end
+
+	local current = session
+	if current == nil then
+		return
+	end
+
+	for userId, role in current.roles do
+		if userId ~= exceptUserId then
+			local player = Players:GetPlayerByUserId(userId)
+			if player ~= nil then
+				local projected = Net.forRole(view, role, payload)
+				if projected ~= nil then
+					remote:FireClient(player, projected)
+				end
 			end
 		end
 	end
@@ -313,7 +349,7 @@ local function startSession(): ()
 			Config.ACCUSATION_FIELDS,
 			Config.MAX_ACCUSATIONS
 		),
-		telemetry = TelemetryService.newSession(os.clock()),
+		telemetry = TelemetryService.newSession(os.clock(), nil, variantId),
 		startedAt = os.clock(),
 	}
 
@@ -346,13 +382,41 @@ local function startSession(): ()
 	-- Briefing per role. PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu
 	-- apa / Tugas pertamamu". Tiap role menerima proyeksi berbeda, dan tidak
 	-- ada role yang menerima field solusi.
+	--
+	-- PRD §4: "Tiap kasus punya 2-3 pernyataan saksi/tersangka, minimal satu
+	-- berbohong." Saksi pembohong itu milik SATU varian (lihat `variants` di
+	-- `$defs.statement`), jadi pernyataan yang dikirim ke Director tidak boleh
+	-- diambil dari `briefings.Director.statements` apa adanya -- daftar statis
+	-- itu hanya memuat pernyataan yang berlaku di semua cabang. Daftar per
+	-- varian dihitung `CaseLoader.projectForRole`, modul yang sama yang dipakai
+	-- untuk menyaring node; menyaring ulang di sini akan jadi salinan kedua
+	-- dari aturan `CaseGraph.statementAppliesTo`.
 	local briefings = (loaded :: any).briefings
 	if type(briefings) == "table" then
+		local directorStatements: { any } = {}
+		if variantId ~= nil then
+			local projectedDirector = CaseLoader.projectForRole(loaded, variantId, "Director")
+			if type(projectedDirector) == "table" and type(projectedDirector.statements) == "table" then
+				directorStatements = projectedDirector.statements
+			end
+		end
+
 		for userId, role in assigned do
 			local player = Players:GetPlayerByUserId(userId)
 			local briefing = briefings[role]
 			if player ~= nil and type(briefing) == "table" then
-				local projected = Net.forRole("briefing", role, briefing)
+				-- Disalin, bukan dimutasi: `briefing` masih menunjuk ke tabel
+				-- di dalam `loaded`, dan menulis ke sana akan mengubah data
+				-- kasus yang di-cache untuk sesi berikutnya.
+				local payload: { [string]: any } = {}
+				for key, value in briefing do
+					payload[key] = value
+				end
+				if role == Roles.DIRECTOR and #directorStatements > 0 then
+					payload.statements = directorStatements
+				end
+
+				local projected = Net.forRole("briefing", role, payload)
 				if projected ~= nil then
 					remotes.SessionState:FireClient(player, projected)
 				end
@@ -416,11 +480,43 @@ local function handleDeduce(player: Player, clueIds: any): ()
 	local result = DeductionEngine.combine(current.engine, ids, current.completedDeductions)
 	if result.ok and result.deductionId ~= nil then
 		current.completedDeductions[result.deductionId] = true
+
+		-- PRD §4: "Deduksi menaruh pinpoint baru di map dan membuka target
+		-- baru." Pinpoint diturunkan dari graf, bukan dibaca dari field
+		-- `unlocks` di data: `unlocks` adalah busur dependensi yang nyata
+		-- (lihat `CaseGraph.dependenciesOf`), jadi menambahkannya ke kasus yang
+		-- sudah lulus gate berarti mengubah graf dan bisa memunculkan
+		-- `graph.cycle`/`graph.dead_end`. Turunan tidak menyentuh data.
+		local pinpoint: string? = nil
+		if current.variantId ~= nil then
+			pinpoint = CaseGraph.primaryOrigin(current.case, current.variantId, result.deductionId)
+		end
+
+		-- `unlocks` tetap dikirim apa adanya dari data. Kedua kasus minggu 6
+		-- tidak punya `unlocks` sama sekali, jadi nil memang jawaban yang
+		-- benar -- mengarang daftar di sini akan menampilkan target yang tidak
+		-- ada di kasus.
+		local node = CaseGraph.nodeIndex(current.case)[result.deductionId]
+		local unlocks: { string }? = nil
+		if node ~= nil and type(node.unlocks) == "table" and #node.unlocks > 0 then
+			unlocks = node.unlocks
+		end
+
+		-- PRD §12: deduksi adalah salah satu peristiwa yang diukur. `deduction`
+		-- sudah ada di `EventKind` sejak awal tetapi belum pernah dicatat,
+		-- sehingga jumlah deduksi per role selalu nol di ringkasan.
+		TelemetryService.record(current.telemetry, {
+			kind = "deduction",
+			role = role,
+			t = os.clock(),
+			detail = result.deductionId,
+		})
+
 		fireToRole("DeductionResult", "deduction", {
 			id = result.deductionId,
 			clue_ids = ids,
-			pinpoint = nil,
-			unlocks = nil,
+			pinpoint = pinpoint,
+			unlocks = unlocks,
 		})
 	end
 end
@@ -515,17 +611,57 @@ local function handleReport(player: Player, payload: any): ()
 		return
 	end
 
+	-- Client hanya mengirim `object_id`. Lokasi dan label TIDAK dipercaya dari
+	-- client: keduanya dibaca dari data kasus, sehingga pemain tidak bisa
+	-- mengirim tag lokasi palsu ke clue board Director (PRD §4: laporan masuk
+	-- ke clue board). Payload lama yang membawa `location` sendiri diabaikan.
+	local objectId = (payload :: any).object_id
+	if type(objectId) ~= "string" or objectId == "" then
+		return
+	end
+
+	local node = CaseGraph.nodeIndex(current.case)[objectId]
+	if node == nil or node.type ~= "object" then
+		-- Laporan atas node yang bukan objek di kasus ini tidak punya arti:
+		-- tidak ada yang bisa ditampilkan di clue board.
+		warn(string.format("[Triangulate] Report ditolak: '%s' bukan objek kasus", objectId))
+		return
+	end
+
+	local variantId = current.variantId
+	if variantId == nil or not CaseGraph.isActive(node, variantId) then
+		warn(string.format("[Triangulate] Report ditolak: objek '%s' tidak aktif di varian ini", objectId))
+		return
+	end
+
 	TelemetryService.record(current.telemetry, {
 		kind = "clue",
 		role = role,
 		t = os.clock(),
-		detail = nil,
+		detail = objectId,
 	})
+
+	-- PRD §7: "Report Card: Searcher menekan Report, foto objek + tag lokasi
+	-- otomatis terkirim. Tidak perlu mengetik."
+	--
+	-- `image` masih placeholder: belum ada satu pun aset foto objek di repo
+	-- (satu-satunya `rbxassetid` adalah `Table.SHEET`). Field-nya tetap
+	-- dikirim supaya bentuk payload tidak berubah saat art pertama masuk.
+	-- `label` adalah nama objeknya, dan sekaligus jadi teks pengganti selama
+	-- gambarnya masih kosong.
+	local report = {
+		id = string.format("%s:%s", current.caseId, objectId),
+		object_id = objectId,
+		label = node.label,
+		location = (current.case :: any).location,
+		image = "rbxassetid://0",
+		gives_key = node.gives_key,
+	}
 
 	-- PRD §4: objek yang dilaporkan masuk ke clue board Director, dan kuncinya
 	-- sampai ke Handler. Tiap role menerima proyeksi berbeda dari payload yang
 	-- sama -- Handler menerima `gives_key`, Searcher dan Director tidak.
-	fireToRole("ReportCard", "report_card", payload :: { [string]: any })
+	fireToRole("ReportCard", "report_card", report)
 end
 
 -- Mencari node `clue_card` berdasarkan id-nya di data kasus. Dipakai saat
@@ -630,11 +766,151 @@ local function handlePlacePiece(player: Player, payload: any): ()
 	end
 end
 
+-- PRD §7: "Ping Wheel kontekstual ... Roda dengan 6-8 frasa yang berubah
+-- sesuai role dan situasi."
+--
+-- Client mengirim HANYA id frasa. Teksnya dicari di `PingPhrases` -- satu
+-- daftar yang sama dengan yang dipakai client untuk menggambar roda -- supaya
+-- client tidak bisa menyiarkan teks bebas lewat kanal ping. `isValid` menolak
+-- frasa milik role lain, jadi Searcher tidak bisa mengirim frasa Director.
+local function handlePing(player: Player, phraseId: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	local role = roleOf(player.UserId)
+	if role == nil then
+		return
+	end
+
+	if type(phraseId) ~= "string" then
+		return
+	end
+
+	if not PingPhrases.isValid(role, phraseId) then
+		warn(string.format("[Triangulate] ping ditolak: frasa '%s' bukan milik %s", phraseId, role))
+		return
+	end
+
+	local label = PingPhrases.labelFor(role, phraseId)
+	if label == nil then
+		-- Tidak mungkin terjadi bila `isValid` sudah lolos, tetapi `nil` di
+		-- sini berarti roda dan label menyimpang -- lebih baik tidak terkirim
+		-- daripada terkirim tanpa teks.
+		return
+	end
+
+	-- PRD §7: "Komunikasi tanpa mengetik. Cukup sentuh." Ping adalah input
+	-- bermakna untuk telemetri idle time (PRD §12), sama seperti menaruh
+	-- potongan.
+	TelemetryService.record(current.telemetry, {
+		kind = "input",
+		role = role,
+		t = os.clock(),
+		detail = phraseId,
+	})
+
+	-- Pengirim tidak menerima ping-nya sendiri: ia baru saja menekannya, dan
+	-- mengirimkannya kembali akan membuat satu ping tampil dua kali.
+	fireToRoleExcept("PingRelay", "ping", {
+		from_role = role,
+		phrase_id = phraseId,
+		label = label,
+	}, player.UserId)
+end
+
+-- PRD §7: "Target Marker: Handler menaruh ikon target yang muncul di HUD
+-- Searcher dan arah kompas."
+--
+-- Yang dikirim Handler hanyalah id node. Label dan arah kompas dihitung di
+-- sini dari data kasus dan `LocationMap`, jadi Searcher tidak bisa menerima
+-- teks atau arah yang dikarang pemain lain.
+--
+-- Target yang dipasang boleh berupa node objek (benda di lokasi) maupun node
+-- bukti (yang dipegang Handler, seperti `briefings.Handler.target`). Bukti
+-- dipetakan ke objek pemilik kuncinya, karena Searcher mencari BENDA -- arah
+-- kompas ke meja Handler tidak ada artinya di lokasi.
+local function handleSetTarget(player: Player, targetId: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	local role = roleOf(player.UserId)
+	if role ~= Roles.HANDLER then
+		-- Marker dipasang Handler (PRD §7). Searcher dan Director tidak punya
+		-- tombol ini.
+		return
+	end
+
+	local variantId = current.variantId
+	if variantId == nil then
+		return
+	end
+
+	if type(targetId) ~= "string" or targetId == "" then
+		return
+	end
+
+	local node = CaseGraph.nodeIndex(current.case)[targetId]
+	if node == nil then
+		warn(string.format("[Triangulate] SetTarget ditolak: '%s' tidak ada di kasus", targetId))
+		return
+	end
+
+	if not CaseGraph.isActive(node, variantId) then
+		warn(string.format("[Triangulate] SetTarget ditolak: '%s' tidak aktif di varian ini", targetId))
+		return
+	end
+
+	local objectId: string? = nil
+	if node.type == "object" then
+		objectId = node.id
+	elseif node.type == "evidence" and type(node.needs) == "table" then
+		-- `node.needs` bukti adalah daftar id kunci. `keyOwners` memetakan
+		-- kunci itu ke objek yang menyediakannya -- satu-satunya cara Searcher
+		-- tahu benda mana yang harus dicari tanpa membocorkan isi bukti.
+		local owners = CaseGraph.keyOwners(current.case, variantId)
+		for _, key in node.needs do
+			local candidates = owners[key]
+			if candidates ~= nil and #candidates > 0 then
+				objectId = candidates[1]
+				break
+			end
+		end
+	end
+
+	if objectId == nil then
+		warn(
+			string.format(
+				"[Triangulate] SetTarget ditolak: '%s' bukan objek dan tidak punya objek asal",
+				targetId
+			)
+		)
+		return
+	end
+
+	local target = CaseGraph.nodeIndex(current.case)[objectId]
+	local location = (current.case :: any).location
+	local payload = {
+		target_id = objectId,
+		label = if target ~= nil then target.label else node.label,
+		bearing = LocationMap.bearingFromEntry(location, objectId),
+	}
+
+	-- Hanya Searcher yang menerima marker: `Net.CLIENT_VIEWS.target_marker`
+	-- sengaja tidak punya entri untuk Handler (pengirim) dan Director.
+	fireToRole("TargetMarker", "target_marker", payload)
+end
+
 remotes.SubmitDeduction.OnServerEvent:Connect(handleDeduce)
 remotes.PlacePiece.OnServerEvent:Connect(handlePlacePiece)
 remotes.Accuse.OnServerEvent:Connect(handleAccuse)
 remotes.ConfirmAccusation.OnServerEvent:Connect(handleConfirm)
 remotes.Report.OnServerEvent:Connect(handleReport)
+remotes.Ping.OnServerEvent:Connect(handlePing)
+remotes.SetTarget.OnServerEvent:Connect(handleSetTarget)
 
 -- ---------------------------------------------------------------------------
 -- 7. Lobby

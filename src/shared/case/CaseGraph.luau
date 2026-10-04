@@ -335,4 +335,61 @@ function CaseGraph.reachable(case: Case, variantId: string): IdSet
 	return done
 end
 
+--[[
+	Objek asal sebuah node: benda di lokasi yang harus ditemukan Searcher supaya
+	node ini bisa dikerjakan.
+
+	PRD §4: "Deduksi menaruh pinpoint baru di map dan membuka target baru."
+	Pinpoint itu harus menunjuk ke suatu tempat, dan satu-satunya node yang
+	mewakili "tempat" di model data adalah `object`. Rantainya:
+	deduction -> needs (clue_card) -> source (evidence) -> needs (key) -> object.
+
+	Kenapa menurunkan rantai ini alih-alih menulis `unlocks` di data: `unlocks`
+	adalah sisi dependensi yang NYATA (`dependenciesOf` memasukkannya), jadi
+	menambahnya ke kasus yang sudah lulus gate berarti menambah busur ke graf --
+	dan busur baru bisa memunculkan `graph.cycle` atau `graph.dead_end`. Turunan
+	di sini tidak menyentuh data sama sekali, jadi kasus yang lulus tetap lulus.
+
+	Urutan hasil mengikuti urutan deklarasi node, bukan urutan penelusuran,
+	supaya pinpoint tidak berpindah-pindah antar pemanggilan.
+]]
+function CaseGraph.origins(case: Case, variantId: string, nodeId: string): IdList
+	local deps = CaseGraph.edges(case, variantId)
+
+	local visited: IdSet = {}
+	local stack: IdList = { nodeId }
+	while #stack > 0 do
+		local current = table.remove(stack) :: string
+		if not visited[current] then
+			visited[current] = true
+			for _, dep in ipairs(deps[current] or {}) do
+				if not visited[dep] then
+					table.insert(stack, dep)
+				end
+			end
+		end
+	end
+
+	local objects: IdList = {}
+	for _, node in ipairs(CaseGraph.activeNodes(case, variantId)) do
+		if node.type == "object" and visited[node.id] then
+			table.insert(objects, node.id)
+		end
+	end
+	return objects
+end
+
+--[[
+	Objek asal pertama dalam urutan deklarasi, atau nil bila tidak ada. Dipakai
+	server untuk mengisi pinpoint deduksi: PRD §4 menyebut satu pinpoint per
+	deduksi, bukan daftar.
+]]
+function CaseGraph.primaryOrigin(case: Case, variantId: string, nodeId: string): string?
+	local objects = CaseGraph.origins(case, variantId, nodeId)
+	if #objects == 0 then
+		return nil
+	end
+	return objects[1]
+end
+
 return CaseGraph

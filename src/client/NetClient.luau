@@ -26,6 +26,8 @@ export type Bound = {
 	SubmitDeduction: RemoteEvent,
 	Accuse: RemoteEvent,
 	Ping: RemoteEvent,
+	PingRelay: RemoteEvent,
+	SetTarget: RemoteEvent,
 	RequestHint: RemoteEvent,
 	ConfirmAccusation: RemoteEvent,
 	PlacePiece: RemoteEvent,
@@ -55,16 +57,20 @@ function NetClient.bind(shared: Instance): Bound
 		SubmitDeduction = waitFor("SubmitDeduction"),
 		Accuse = waitFor("Accuse"),
 		Ping = waitFor("Ping"),
+		PingRelay = waitFor("PingRelay"),
+		SetTarget = waitFor("SetTarget"),
 		RequestHint = waitFor("RequestHint"),
 		ConfirmAccusation = waitFor("ConfirmAccusation"),
 		PlacePiece = waitFor("PlacePiece"),
 	}
 end
 
--- PRD §7: Report Card. Client hanya mengirim ID objek dan lokasinya; server
--- yang memutuskan apa yang kembali ke tiap role.
-function NetClient.report(bound: Bound, objectId: string, location: string): ()
-	bound.Report:FireServer({ object_id = objectId, location = location })
+-- PRD §7: Report Card. Client hanya mengirim ID objek; tag lokasi, label, dan
+-- gambarnya diisi server dari data kasus. Lokasi TIDAK dikirim client karena
+-- laporan ini muncul di clue board Director -- kalau client boleh menyetelnya,
+-- pemain bisa memalsukan tag lokasi (PRD §15: server yang memutuskan).
+function NetClient.report(bound: Bound, objectId: string): ()
+	bound.Report:FireServer({ object_id = objectId })
 end
 
 -- PRD §4: Director menggabungkan Clue Card. Client mengirim daftar id; resep
@@ -86,6 +92,13 @@ end
 -- PRD §7: ping wheel. Yang dikirim adalah ID frasa, bukan teks bebas.
 function NetClient.ping(bound: Bound, phraseId: string): ()
 	bound.Ping:FireServer(phraseId)
+end
+
+-- PRD §7: Handler memasang Target Marker. Yang dikirim hanya id node target;
+-- label dan arah kompasnya dihitung server dari data kasus dan `LocationMap`,
+-- jadi client tidak bisa mengarang teks yang muncul di HUD pemain lain.
+function NetClient.setTarget(bound: Bound, targetId: string): ()
+	bound.SetTarget:FireServer(targetId)
 end
 
 -- PRD §8: hint butuh persetujuan 2 role, jadi ini permintaan, bukan aksi.
