@@ -1,0 +1,91 @@
+{
+  "case_id": "gallery_01",
+  "title": "Lukisan yang Tertukar",
+  "case_type": "standard",
+  "key_deductions": 4,
+  "location": "gallery",
+  "variants": [
+    {
+      "variant_id": "v_curator",
+      "label": "Kurator berutang",
+      "culprit": "curator",
+      "motive": "debt",
+      "method": "access_card"
+    },
+    {
+      "variant_id": "v_guard",
+      "label": "Satpam membalas",
+      "culprit": "guard",
+      "motive": "revenge",
+      "method": "alarm_off"
+    }
+  ],
+  "briefing": {
+    "searcher": "Kamu satu-satunya yang bisa masuk ke lokasi. Temukan objek bertanda, periksa, lalu tekan Report. Kalau terkunci, cari kode di sekitar.",
+    "handler": "Arsip kasus ada di mejamu. Tandai target untuk Searcher, lalu rakit potongan bukti yang kuncinya sudah kamu pegang.",
+    "director": "Kamu memegang clue board. Gabungkan Clue Card jadi Deduksi, tandai kontradiksi antar pernyataan, dan susun tuduhan akhir."
+  },
+  "nodes": [
+    { "id": "obj_schedule", "type": "object", "label": "Sobekan jadwal di ruang staf", "gives_key": "key_a" },
+    { "id": "ev_schedule", "type": "evidence", "label": "Jadwal jaga yang disusun ulang", "puzzle": "torn_doc", "needs": ["key_a"], "yields": "clue_guard_off" },
+    { "id": "clue_guard_off", "type": "clue_card", "label": "Satpam off duty jam 21.00", "source": "ev_schedule" },
+
+    { "id": "obj_shift_note", "type": "object", "label": "Catatan serah terima shift di papan", "gives_key": "key_a2" },
+    { "id": "ev_shift_note", "type": "evidence", "label": "Urutan serah terima shift", "puzzle": "timeline", "needs": ["key_a2"], "yields": "clue_shift_swap" },
+    { "id": "clue_shift_swap", "type": "clue_card", "label": "Shift malam ditukar mendadak", "source": "ev_shift_note" },
+
+    { "id": "obj_access_card", "type": "object", "label": "Kartu akses di loker", "gives_key": "key_b" },
+    { "id": "ev_access_log", "type": "evidence", "label": "Log akses ter-decode", "puzzle": "cipher", "needs": ["key_b"], "yields": "clue_curator_card" },
+    { "id": "clue_curator_card", "type": "clue_card", "label": "Kartu kurator dipakai jam 21.10", "source": "ev_access_log" },
+
+    { "id": "obj_door_log", "type": "object", "label": "Log pintu arsip", "gives_key": "key_b2" },
+    { "id": "ev_door_log", "type": "evidence", "label": "Urutan buka pintu arsip", "puzzle": "timeline", "needs": ["key_b2"], "yields": "clue_side_door" },
+    { "id": "clue_side_door", "type": "clue_card", "label": "Pintu samping terbuka 21.05 tanpa alarm", "source": "ev_door_log" },
+
+    { "id": "obj_photo_stack", "type": "object", "label": "Tumpukan foto di studio kolektor", "gives_key": "key_c" },
+    { "id": "ev_photo_timeline", "type": "evidence", "label": "Timeline foto studio", "puzzle": "timeline", "needs": ["key_c"], "yields": "clue_fake_painting" },
+    { "id": "clue_fake_painting", "type": "clue_card", "label": "Kolektor tahu lukisan itu palsu", "source": "ev_photo_timeline" },
+
+    { "id": "obj_debt_letter", "type": "object", "label": "Surat tagihan di meja", "gives_key": "key_c2" },
+    { "id": "ev_debt_letter", "type": "evidence", "label": "Surat tagihan disusun ulang", "puzzle": "torn_doc", "needs": ["key_c2"], "yields": "clue_debt" },
+    { "id": "clue_debt", "type": "clue_card", "label": "Kurator punya utang jatuh tempo", "source": "ev_debt_letter" },
+
+    { "id": "ded_c_culprit_1", "type": "deduction", "label": "Kartu kurator dipakai saat satpam tidak jaga", "variants": ["v_curator"], "needs": ["clue_curator_card", "clue_guard_off"], "supports": ["culprit"], "unlocks": ["obj_ledger"] },
+    { "id": "ded_c_culprit_2", "type": "deduction", "label": "Kurator hadir setelah shift ditukar", "variants": ["v_curator"], "needs": ["clue_curator_card", "clue_shift_swap"], "supports": ["culprit"] },
+    { "id": "ded_c_method_1", "type": "deduction", "label": "Masuk lewat pintu samping saat shift ditukar", "variants": ["v_curator"], "needs": ["clue_side_door", "clue_shift_swap"], "supports": ["method"] },
+    { "id": "ded_c_method_2", "type": "deduction", "label": "Pintu samping tanpa alarm saat satpam off", "variants": ["v_curator"], "needs": ["clue_side_door", "clue_guard_off"], "supports": ["method"] },
+    { "id": "ded_c_motive_1", "type": "deduction", "label": "Motif finansial kurator", "variants": ["v_curator"], "needs": ["clue_debt", "clue_fake_painting"], "supports": ["motive"] },
+    { "id": "ded_c_motive_2", "type": "deduction", "label": "Utang kurator jatuh tempo bulan ini", "variants": ["v_curator"], "needs": ["clue_debt", "clue_ledger_balance"], "supports": ["motive"] },
+
+    { "id": "obj_ledger", "type": "object", "label": "Buku kas tersembunyi di belakang lukisan", "variants": ["v_curator"], "gives_key": "key_ledger" },
+    { "id": "ev_ledger", "type": "evidence", "label": "Saldo kas galeri", "variants": ["v_curator"], "puzzle": "cipher", "needs": ["key_ledger"], "yields": "clue_ledger_balance" },
+    { "id": "clue_ledger_balance", "type": "clue_card", "label": "Kas galeri kosong sejak Maret", "variants": ["v_curator"], "source": "ev_ledger" },
+
+    { "id": "ded_g_culprit_1", "type": "deduction", "label": "Satpam yang mengatur shift-nya sendiri", "variants": ["v_guard"], "needs": ["clue_shift_swap", "clue_guard_off"], "supports": ["culprit"] },
+    { "id": "ded_g_culprit_2", "type": "deduction", "label": "Satpam tahu jalur samping", "variants": ["v_guard"], "needs": ["clue_shift_swap", "clue_side_door"], "supports": ["culprit"] },
+    { "id": "ded_g_method_1", "type": "deduction", "label": "Alarm dimatikan dari dalam", "variants": ["v_guard"], "needs": ["clue_side_door", "clue_guard_off"], "supports": ["method"] },
+    { "id": "ded_g_method_2", "type": "deduction", "label": "Pintu samping dibuka tanpa alarm", "variants": ["v_guard"], "needs": ["clue_side_door", "clue_curator_card"], "supports": ["method"] },
+    { "id": "ded_g_motive_1", "type": "deduction", "label": "Satpam tahu lukisan palsu dan ia pernah dituduh", "variants": ["v_guard"], "needs": ["clue_fake_painting", "clue_guard_off"], "supports": ["motive"] },
+    { "id": "ded_g_motive_2", "type": "deduction", "label": "Pembalasan atas shift yang ditukar", "variants": ["v_guard"], "needs": ["clue_fake_painting", "clue_shift_swap"], "supports": ["motive"] }
+  ],
+  "statements": [
+    { "who": "curator", "text": "Saya pulang jam 20.00 dan tidak kembali ke galeri.", "lie": true, "contradicted_by": "clue_curator_card", "variants": ["v_curator"] },
+    { "who": "guard", "text": "Saya serah terima shift jam 21.00 seperti biasa.", "lie": true, "contradicted_by": "clue_shift_swap", "variants": ["v_guard"] },
+    { "who": "collector", "text": "Lukisan itu asli dan saya membelinya resmi.", "lie": false },
+    { "who": "guard", "text": "Kurator sering lembur sendirian di ruang arsip.", "lie": false }
+  ],
+  "solution": {
+    "v_curator": {
+      "culprit": "curator",
+      "motive": "debt",
+      "method": "access_card",
+      "required_deductions": ["ded_c_culprit_1", "ded_c_method_1", "ded_c_motive_1", "ded_c_motive_2"]
+    },
+    "v_guard": {
+      "culprit": "guard",
+      "motive": "revenge",
+      "method": "alarm_off",
+      "required_deductions": ["ded_g_culprit_1", "ded_g_method_1", "ded_g_motive_1", "ded_g_culprit_2"]
+    }
+  }
+}
