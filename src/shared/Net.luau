@@ -55,6 +55,7 @@ local REMOTE_NAMES: { string } = {
 	"RequestHint",
 	"ConfirmAccusation",
 	"PlacePiece",
+	"MarkContradiction",
 }
 
 -- Remote yang arahnya server -> client.
@@ -95,6 +96,7 @@ local CLIENT_TO_SERVER: { [string]: boolean } = {
 	RequestHint = true,
 	ConfirmAccusation = true,
 	PlacePiece = true,
+	MarkContradiction = true,
 }
 
 -- Field yang boleh dilihat tiap role, per jenis payload.
@@ -124,7 +126,8 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 		Director = { "id", "pinpoint", "unlocks", "clue_ids" },
 	},
 
-	-- PRD §6: timer cleanup dan progres rantai.
+	-- PRD §6: timer cleanup dan progres rantai. PRD §5: progres gerbang dan
+	-- rekap Cold Case.
 	--
 	-- `key_deductions_required` adalah ANGKA ambang gerbang (N), bukan daftar
 	-- deduksi mana yang kunci. Nama `key_deductions` sengaja tidak dipakai di
@@ -132,9 +135,35 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 	-- nama yang sama untuk dua arti berbeda akan membuat `validateViews` gagal
 	-- -- dan memang seharusnya begitu, karena proyeksi whitelist bekerja per
 	-- nama field.
+	--
+	-- `gate_open` adalah hasil gerbang yang sudah dihitung server. Ia boleh
+	-- sampai ke client karena client MEMANG perlu tahu kapan tombolnya hidup;
+	-- yang tidak boleh sampai adalah komponen pembentuknya selain angka
+	-- progres. Form di client karena itu hanya menyembunyikan/menonaktifkan
+	-- tombol -- penegakannya tetap di server (`AccusationGate.admit` dipanggil
+	-- `init.server.luau` sebelum tuduhan dinilai).
+	--
+	-- `cold_case_recap` hanya berisi angka (lihat `AccusationGate.recap`), jadi
+	-- ia tidak bisa dibaca sebagai jawaban.
 	session_state = {
-		Searcher = { "case_id", "role", "phase", "seconds_left", "chains" },
-		Handler = { "case_id", "role", "phase", "seconds_left", "chains" },
+		Searcher = {
+			"case_id",
+			"role",
+			"phase",
+			"seconds_left",
+			"chains",
+			"cleanup_seconds_left",
+			"cold_case_recap",
+		},
+		Handler = {
+			"case_id",
+			"role",
+			"phase",
+			"seconds_left",
+			"chains",
+			"cleanup_seconds_left",
+			"cold_case_recap",
+		},
 		Director = {
 			"case_id",
 			"role",
@@ -143,6 +172,12 @@ local CLIENT_VIEWS: { [string]: { [string]: { string } } } = {
 			"chains",
 			"deductions_done",
 			"key_deductions_required",
+			"key_deductions_done",
+			"contradictions_marked",
+			"contradictions_required",
+			"gate_open",
+			"cleanup_seconds_left",
+			"cold_case_recap",
 		},
 	},
 

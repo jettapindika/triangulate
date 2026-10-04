@@ -77,7 +77,7 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau                        # 566 assertion, 15 berkas spec
+lune run tests/run.luau                        # 748 assertion, 17 berkas spec
 selene --config selene.toml .                  # lint
 stylua --config-path stylua.toml --check .     # format
 ```
@@ -92,12 +92,18 @@ jadi ia hanya bisa memeriksa modul murni:
 ```sh
 luau-analyze --mode=strict \
   src/shared/Config.luau src/shared/Roles.luau src/shared/Net.luau \
-  src/shared/PingPhrases.luau src/server/RoleAssignment.luau \
-  src/server/Matchmaking.luau src/server/AccusationService.luau \
+  src/shared/PingPhrases.luau src/shared/PuzzleTable.luau \
+  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau \
+  src/server/RoleAssignment.luau src/server/Matchmaking.luau \
+  src/server/AccusationService.luau src/server/AccusationGate.luau \
   src/server/DeductionEngine.luau src/server/ClueGraph.luau \
   src/server/TelemetryService.luau src/server/NPCController.luau \
-  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau
+  src/server/PuzzleTableService.luau
 ```
+
+`src/shared/case/Compat.luau` tidak ikut: ia ditandai `--!nocheck`, jadi
+"lulus" di sana bukan hasil pemeriksaan. `CaseLoader` juga tidak ikut karena
+menyentuh `Instance`.
 
 Pemeriksaan tipe untuk berkas yang menyentuh API Roblox butuh `luau-lsp` dengan
 `sourcemap.json` dari `rojo sourcemap`. Itu bagian dari EXTA-34.

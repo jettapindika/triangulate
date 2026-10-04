@@ -78,7 +78,11 @@ ping wheel akan terhitung menganggur.
   punya UI, `preferences` masih `Roles.ALL` (tanpa preferensi). Daftar lengkap
   ada sebagai komentar di `src/server/init.server.luau` bagian 7.
 - **NPC Director terpandu** — P1 (PRD §16).
-- **Kontradiksi di clue board** — minggu 3-4.
+- **UI clue board Director** — minggu 3 (EXTA-56). Mesinnya sudah ada
+  (`DeductionEngine.combine`, `handleDeduce`, node `ded_*` di data kasus), yang
+  belum adalah layar untuk menyusun Clue Card dan menandai Kontradiksi.
+  Mekanisme penandaan kontradiksi di server dan proyeksinya sudah selesai
+  (EXTA-57); HUD belum memanggil `NetClient.markContradiction`.
 
 Catatan: baris *"Case 0 dan story case — minggu 6"* sudah tidak berlaku; dua
 berkas kasusnya ada dan lolos validator (§1). Yang **belum** ada dari minggu 6

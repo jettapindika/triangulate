@@ -1,16 +1,16 @@
 --!strict
--- HUD client (PRD §7, §9, §15).
+-- HUD client (PRD §5, §7, §9, §15).
 --
 -- Prinsip yang dipegang modul ini: client hanya MENAMPILKAN apa yang dikirim
 -- server. Tidak ada perhitungan resep, tidak ada penilaian tuduhan, tidak ada
 -- pengetahuan tentang varian kasus. Kalau sebuah nilai tidak datang lewat
 -- remote, client tidak menampilkannya -- itu perilaku yang benar, bukan bug.
 --
--- Tampilan yang dibangun di sini adalah yang bisa dibangun sekarang: Role Card
--- (PRD §9), status sesi, feedback tuduhan (PRD §5), ping wheel + toast
--- (PRD §7), Report Card (PRD §7), dan Target Marker dengan kompas (PRD §7).
--- Meja puzzle dan clue board adalah scope minggu 1-3 (PRD §17) dan belum ada
--- di sini.
+-- Tampilan yang dibangun di sini: Role Card (PRD §9), status sesi, feedback
+-- tuduhan (PRD §5), form tuduhan (PRD §5), rekap Cold Case (PRD §5), ping
+-- wheel + toast (PRD §7), Report Card (PRD §7), dan Target Marker dengan
+-- kompas (PRD §7). Meja puzzle dan clue board adalah scope minggu 1-3
+-- (PRD §17) dan belum ada di sini.
 
 local PingWheel = require(script.PingWheel)
 
@@ -81,12 +81,36 @@ export type State = {
 	resolved: boolean?,
 	won: boolean?,
 	pendingConfirmation: boolean?,
+	-- PRD §5: progres gerbang dan timer cleanup. Client hanya menampilkan;
+	-- yang menghitung dan menegakkan keduanya adalah server.
+	gateOpen: boolean?,
+	keyDeductionsDone: number?,
+	keyDeductionsRequired: number?,
+	contradictionsMarked: number?,
+	contradictionsRequired: number?,
+	cleanupSecondsLeft: number?,
+	-- PRD §5: rekap parsial Cold Case. Seluruhnya angka -- server tidak pernah
+	-- mengirim id node atau teks jawaban ke sini.
+	coldCaseRecap: { [string]: number }?,
+	-- PRD §5: kandidat isi form tuduhan, yaitu payload `accusation_options`
+	-- (`suspects`/`motives`/`methods`). Kandidat, bukan jawaban.
+	accusationOptions: { [string]: { string } }?,
 	-- PRD §7: marker yang dipasang Handler, terlihat di HUD Searcher.
 	marker: { target_id: string?, label: string?, bearing: number? }?,
 	-- PRD §7: target awal yang diberikan briefing ke Handler. Inilah yang
 	-- dipasang sebagai marker, karena Handler tahu apa yang harus dicari
 	-- sebelum Searcher tahu di mana mencarinya.
 	briefingTarget: string?,
+}
+
+-- PRD §5: tiga field tuduhan, dan daftar kandidatnya di `accusation_options`.
+-- Kunci `field` HARUS sama dengan `Config.ACCUSATION_FIELDS` -- itu yang
+-- divalidasi `AccusationService.validate`; kunci `option` adalah nama daftar
+-- kandidat di payload server.
+local ACCUSATION_ROWS = {
+	{ field = "culprit", option = "suspects", title = "Pelaku" },
+	{ field = "motive", option = "motives", title = "Motif" },
+	{ field = "method", option = "methods", title = "Cara" },
 }
 
 -- Arah kompas dalam teks. Searcher melihat "utara-timur laut", bukan "37.5" --
@@ -148,8 +172,11 @@ end
 
 -- Membangun HUD dan mengembalikan fungsi untuk memperbarui statusnya.
 --
--- `handlers` membawa aksi yang boleh dilakukan client. Ping dan Report sama
--- bentuknya: client mengirim id, server memutuskan efeknya.
+-- `handlers` membawa aksi yang boleh dilakukan client. Ping, Report, dan
+-- Tandai sama bentuknya: client mengirim id, server memutuskan efeknya.
+-- `onAccuse` hanya dipanggil dari tombol yang hidup, dan hidupnya ditentukan
+-- `state.gateOpen` -- nilai yang datang dari server. Server tetap menegakkan
+-- gerbangnya sendiri (`AccusationGate.admit`), karena client bisa dimodifikasi.
 function Hud.mount(
 	player: Player,
 	state: State,
@@ -157,11 +184,13 @@ function Hud.mount(
 		onPing: ((string) -> ())?,
 		onReport: ((string) -> ())?,
 		onSetTarget: ((string) -> ())?,
+		onAccuse: (({ [string]: string }) -> ())?,
 	}
 ): {
 	update: (State) -> (),
 	showRoleCard: ({ [string]: any }) -> (),
 	openPingWheel: () -> (),
+	openAccusationForm: () -> (),
 	showMarker: ({ [string]: any }) -> (),
 	showReport: ({ [string]: any }) -> (),
 	showPing: (string, string) -> (),
@@ -172,8 +201,9 @@ function Hud.mount(
 	gui.IgnoreGuiInset = true
 	gui.Parent = player:WaitForChild("PlayerGui")
 
-	-- Bilah status kiri atas: role dan fase sesi.
-	local status = panel(gui, "Status", UDim2.fromOffset(16, 16), UDim2.fromOffset(280, 96))
+	-- Bilah status kiri atas: role, fase, feedback tuduhan, progres gerbang,
+	-- dan sisa waktu cleanup.
+	local status = panel(gui, "Status", UDim2.fromOffset(16, 16), UDim2.fromOffset(300, 140))
 
 	local roleLabel = label(status, "Role", 20, COLORS.accent)
 	roleLabel.Position = UDim2.new(0, 0, 0, 0)
@@ -185,9 +215,16 @@ function Hud.mount(
 	local accusationLabel = label(status, "Accusation", 15, COLORS.muted)
 	accusationLabel.Position = UDim2.fromOffset(0, 56)
 
+	local gateLabel = label(status, "Gate", 15, COLORS.muted)
+	gateLabel.Position = UDim2.fromOffset(0, 80)
+
+	local cleanupLabel = label(status, "Cleanup", 15, COLORS.muted)
+	cleanupLabel.Position = UDim2.fromOffset(0, 104)
+
 	-- PRD §7: "Target Marker: Handler menaruh ikon target yang muncul di HUD
 	-- Searcher dan arah kompas." Panel ini hanya muncul setelah marker datang.
-	local markerPanel = panel(gui, "TargetMarker", UDim2.new(1, -276, 0, 16), UDim2.fromOffset(260, 74))
+	local markerPanel =
+		panel(gui, "TargetMarker", UDim2.new(1, -276, 0, 16), UDim2.fromOffset(260, 74))
 	markerPanel.Visible = false
 
 	local markerLabel = label(markerPanel, "Target", 17, COLORS.accent)
@@ -201,7 +238,7 @@ function Hud.mount(
 	-- Satu jalur tampil untuk pesan singkat: ping yang masuk, dan konfirmasi
 	-- Report yang baru dikirim. Keduanya "tanpa mengetik" (PRD §7), jadi
 	-- keduanya butuh tempat yang sama untuk terlihat.
-	local toast = panel(gui, "Toast", UDim2.fromOffset(16, 120), UDim2.fromOffset(320, 50))
+	local toast = panel(gui, "Toast", UDim2.fromOffset(16, 176), UDim2.fromOffset(320, 50))
 	toast.Visible = false
 
 	local toastLabel = label(toast, "Text", 16, COLORS.text)
@@ -282,6 +319,296 @@ function Hud.mount(
 	pingCorner.CornerRadius = UDim.new(1, 0)
 	pingCorner.Parent = pingButton
 
+	-- PRD §5: pembuka form tuduhan. Hanya Director yang pernah melihatnya, dan
+	-- hanya setelah server menyatakan gerbangnya terbuka -- jadi formnya tidak
+	-- bisa dibuka sama sekali sebelum gerbang terpenuhi.
+	local accusationButton = Instance.new("TextButton")
+	accusationButton.Name = "AccusationButton"
+	accusationButton.Text = "Tuduhan"
+	accusationButton.TextSize = 20
+	accusationButton.Font = Enum.Font.GothamBold
+	accusationButton.TextColor3 = COLORS.background
+	accusationButton.BackgroundColor3 = COLORS.accent
+	accusationButton.BorderSizePixel = 0
+	accusationButton.AnchorPoint = Vector2.new(1, 1)
+	accusationButton.Position = UDim2.new(1, -24, 1, -140)
+	accusationButton.Size = UDim2.fromOffset(120, 56)
+	accusationButton.Visible = false
+	accusationButton.Parent = gui
+
+	local accusationCorner = Instance.new("UICorner")
+	accusationCorner.CornerRadius = UDim.new(0, 12)
+	accusationCorner.Parent = accusationButton
+
+	local form =
+		panel(gui, "AccusationForm", UDim2.new(0.5, -200, 0.5, -170), UDim2.fromOffset(400, 340))
+	form.Visible = false
+
+	local formTitle = label(form, "Title", 22, COLORS.accent)
+	formTitle.Text = "Form Tuduhan"
+	formTitle.Position = UDim2.fromOffset(0, 0)
+	formTitle.Size = UDim2.new(1, 0, 0, 28)
+
+	local formGate = label(form, "Gate", 15, COLORS.muted)
+	formGate.Position = UDim2.fromOffset(0, 32)
+	formGate.Size = UDim2.new(1, 0, 0, 20)
+
+	local formResult = label(form, "Result", 15, COLORS.text)
+	formResult.Position = UDim2.fromOffset(0, 54)
+	formResult.Size = UDim2.new(1, 0, 0, 20)
+
+	local chosen: { [string]: string } = {}
+	local rowValues: { [string]: TextLabel } = {}
+
+	local submitButton = Instance.new("TextButton")
+	submitButton.Name = "Submit"
+	submitButton.Text = "Kirim tuduhan"
+	submitButton.TextSize = 18
+	submitButton.Font = Enum.Font.GothamBold
+	submitButton.TextColor3 = COLORS.background
+	submitButton.BackgroundColor3 = COLORS.accent
+	submitButton.BorderSizePixel = 0
+	submitButton.Position = UDim2.fromOffset(0, 274)
+	submitButton.Size = UDim2.new(1, 0, 0, 40)
+	submitButton.Parent = form
+
+	local submitCorner = Instance.new("UICorner")
+	submitCorner.CornerRadius = UDim.new(0, 8)
+	submitCorner.Parent = submitButton
+
+	-- Rekap Cold Case. Dibuat saat kasus benar-benar berakhir sebagai Cold Case
+	-- (PRD §5, SOP-03 A.2).
+	local recapLabel: TextLabel? = nil
+
+	local function refresh(): ()
+		local open = state.gateOpen == true
+		local finished = state.resolved == true
+
+		-- PRD §5: progres gerbang. Hanya Director yang menerima angka ini dari
+		-- server (`Net.CLIENT_VIEWS.session_state`), jadi hanya dia yang
+		-- menampilkannya.
+		local gateText = ""
+		if state.role == "Director" and state.keyDeductionsRequired ~= nil then
+			gateText = string.format(
+				"Gerbang: %d/%d Deduksi Kunci, %d/%d Kontradiksi",
+				state.keyDeductionsDone or 0,
+				state.keyDeductionsRequired,
+				state.contradictionsMarked or 0,
+				state.contradictionsRequired or 0
+			)
+		end
+		gateLabel.Text = gateText
+		formGate.Text = gateText
+
+		-- PRD §6: timer cleanup. Semua role menerimanya -- bukti yang terhapus
+		-- ada di lokasi, dan Searcher yang paling perlu tahu.
+		local cleanup = state.cleanupSecondsLeft
+		cleanupLabel.Text = if cleanup ~= nil
+			then string.format("Bukti terhapus dalam %d dtk", math.max(0, cleanup))
+			else ""
+
+		-- PRD §5: feedback salah hanya "X dari 3 benar", tanpa menyebut field
+		-- mana. Client hanya bisa menampilkan angka yang dikirim server.
+		local correct = state.correctCount
+		local left = state.attemptsLeft
+		local feedback = ""
+		if correct ~= nil and left ~= nil then
+			if finished then
+				feedback = if state.won then "Kasus terpecahkan!" else "Cold Case"
+			elseif state.pendingConfirmation then
+				feedback = string.format("%d dari 3 benar - butuh konfirmasi role lain", correct)
+			else
+				feedback = string.format("%d dari 3 benar - sisa %d percobaan", correct, left)
+			end
+		end
+		accusationLabel.Text = feedback
+		formResult.Text = feedback
+
+		-- Tombol buka form: Director, gerbang terbuka, kasus belum berakhir.
+		accusationButton.Visible = state.role == "Director" and open and not finished
+		if not accusationButton.Visible then
+			form.Visible = false
+		end
+
+		-- Tombol kirim: butuh gerbang terbuka dan ketiga field terisi. Ini
+		-- gerbang TAMPILAN saja; `AccusationGate.admit` di server yang menolak
+		-- percobaan menembus.
+		local ready = open and not finished
+		for _, row in ACCUSATION_ROWS do
+			if chosen[row.field] == nil then
+				ready = false
+			end
+		end
+
+		submitButton.Text = if open then "Kirim tuduhan" else "Gerbang belum terbuka"
+		submitButton.Active = ready
+		submitButton.AutoButtonColor = ready
+		submitButton.BackgroundColor3 = if ready then COLORS.accent else COLORS.muted
+		submitButton.TextColor3 = if ready then COLORS.background else COLORS.panel
+
+		-- PRD §5, SOP-03 A.2: rekap parsial. Angka-angka ini datang dari server;
+		-- client tidak menghitung apa pun.
+		local recap = state.coldCaseRecap
+		if finished and state.won ~= true and recap ~= nil then
+			if recapLabel == nil then
+				local card = panel(
+					gui,
+					"ColdCaseRecap",
+					UDim2.new(0.5, -170, 0.5, -110),
+					UDim2.fromOffset(340, 220)
+				)
+				local heading = label(card, "Heading", 20, COLORS.accent)
+				heading.Text = "Cold Case - rekap parsial"
+				heading.Position = UDim2.fromOffset(0, 0)
+				heading.Size = UDim2.new(1, 0, 0, 26)
+				recapLabel = label(card, "Body", 16, COLORS.text)
+				recapLabel.Position = UDim2.fromOffset(0, 34)
+				recapLabel.Size = UDim2.new(1, 0, 0, 160)
+			end
+
+			recapLabel.Text = string.format(
+				"Bukti ditemukan: %d dari %d\nDeduksi kunci: %d dari %d\nKontradiksi ditandai: %d\nTuduhan terpakai: %d",
+				recap.evidence_found or 0,
+				recap.evidence_total or 0,
+				recap.key_deductions_done or 0,
+				recap.key_deductions_required or 0,
+				recap.contradictions_marked or 0,
+				recap.attempts_used or 0
+			)
+		elseif recapLabel ~= nil then
+			recapLabel.Text = ""
+		end
+	end
+
+	-- Daftar kandidat datang dari payload `accusation_options`; sampai ia tiba,
+	-- barisnya menampilkan "-" dan tombol kirimnya mati.
+	local function refreshRows(): ()
+		local options = state.accusationOptions
+		if options == nil then
+			return
+		end
+
+		for _, row in ACCUSATION_ROWS do
+			local list = options[row.option]
+			local valueLabel = rowValues[row.field]
+			if valueLabel == nil or type(list) ~= "table" or #list == 0 then
+				continue
+			end
+
+			local current = chosen[row.field]
+			local valid = false
+			for _, candidate in list do
+				if candidate == current then
+					valid = true
+					break
+				end
+			end
+
+			if not valid then
+				chosen[row.field] = list[1]
+			end
+			valueLabel.Text = chosen[row.field]
+		end
+	end
+
+	-- Menggeser pilihan satu langkah dengan pembungkusan. Daftar kandidat hanya
+	-- belasan entri, jadi berputar lebih cepat di layar sentuh daripada membuka
+	-- daftar dropdown (PRD §7).
+	local function cycle(row: { field: string, option: string, title: string }, step: number): ()
+		local options = state.accusationOptions
+		if options == nil then
+			return
+		end
+
+		local list = options[row.option]
+		if list == nil or #list == 0 then
+			return
+		end
+
+		local index = 1
+		for position, value in list do
+			if value == chosen[row.field] then
+				index = position
+				break
+			end
+		end
+
+		index = ((index - 1 + step) % #list) + 1
+		chosen[row.field] = list[index]
+
+		local valueLabel = rowValues[row.field]
+		if valueLabel ~= nil then
+			valueLabel.Text = list[index]
+		end
+		refresh()
+	end
+
+	local function smallButton(name: string, text: string, position: UDim2): TextButton
+		local button = Instance.new("TextButton")
+		button.Name = name
+		button.Text = text
+		button.TextSize = 18
+		button.Font = Enum.Font.GothamBold
+		button.TextColor3 = COLORS.text
+		button.BackgroundColor3 = COLORS.background
+		button.BorderSizePixel = 0
+		button.AnchorPoint = Vector2.new(1, 0)
+		button.Position = position
+		button.Size = UDim2.fromOffset(40, 32)
+		button.Parent = form
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 8)
+		corner.Parent = button
+
+		return button
+	end
+
+	for index, row in ACCUSATION_ROWS do
+		local y = 82 + (index - 1) * 60
+
+		local fieldLabel = label(form, row.field .. "Label", 13, COLORS.muted)
+		fieldLabel.Text = row.title
+		fieldLabel.Position = UDim2.fromOffset(0, y)
+		fieldLabel.Size = UDim2.new(0.5, 0, 0, 18)
+
+		local valueLabel = label(form, row.field .. "Value", 20, COLORS.text)
+		valueLabel.Text = "-"
+		valueLabel.Position = UDim2.fromOffset(0, y + 18)
+		valueLabel.Size = UDim2.new(0.6, 0, 0, 26)
+		rowValues[row.field] = valueLabel
+
+		local previous = smallButton(row.field .. "Prev", "<", UDim2.new(1, -46, 0, y + 12))
+		previous.Activated:Connect(function()
+			cycle(row, -1)
+		end)
+
+		local next_ = smallButton(row.field .. "Next", ">", UDim2.new(1, 0, 0, y + 12))
+		next_.Activated:Connect(function()
+			cycle(row, 1)
+		end)
+	end
+
+	submitButton.Activated:Connect(function()
+		if state.gateOpen ~= true or state.resolved == true then
+			return
+		end
+
+		local accusation: { [string]: string } = {}
+		for _, row in ACCUSATION_ROWS do
+			local value = chosen[row.field]
+			if value == nil then
+				return
+			end
+			accusation[row.field] = value
+		end
+
+		local accuse = handlers.onAccuse
+		if accuse ~= nil then
+			accuse(accusation)
+		end
+	end)
+
 	local wheel: Frame? = nil
 	-- Role yang dipakai roda saat ini dibangun. Disimpan terpisah dari
 	-- `state.role` supaya roda dibangun ULANG saat role baru tiba -- kalau
@@ -300,24 +627,8 @@ function Hud.mount(
 		reportButton.Visible = state.role == "Searcher"
 		markButton.Visible = state.role == "Handler"
 
-		-- PRD §5: feedback salah hanya "X dari 3 benar", tanpa menyebut field
-		-- mana. Client hanya bisa menampilkan angka yang dikirim server.
-		local correct = state.correctCount
-		local left = state.attemptsLeft
-		if correct == nil or left == nil then
-			accusationLabel.Text = ""
-			return
-		end
-
-		if state.resolved then
-			accusationLabel.Text = state.won and "Kasus terpecahkan!" or "Cold Case"
-		elseif state.pendingConfirmation then
-			accusationLabel.Text =
-				string.format("%d dari 3 benar - butuh konfirmasi role lain", correct)
-		else
-			accusationLabel.Text =
-				string.format("%d dari 3 benar - sisa %d percobaan", correct, left)
-		end
+		refreshRows()
+		refresh()
 	end
 
 	local function openPingWheel(): ()
@@ -338,6 +649,13 @@ function Hud.mount(
 		end
 
 		wheel.Visible = not wheel.Visible
+	end
+
+	local function openAccusationForm(): ()
+		if not accusationButton.Visible then
+			return
+		end
+		form.Visible = not form.Visible
 	end
 
 	local function showMarker(payload: { [string]: any }): ()
@@ -385,6 +703,7 @@ function Hud.mount(
 	end)
 
 	pingButton.Activated:Connect(openPingWheel)
+	accusationButton.Activated:Connect(openAccusationForm)
 
 	reportButton.Activated:Connect(function()
 		-- Yang dilaporkan adalah benda yang sedang ditandai Handler. Searcher
@@ -416,6 +735,7 @@ function Hud.mount(
 			Hud.showRoleCard(gui, briefing)
 		end,
 		openPingWheel = openPingWheel,
+		openAccusationForm = openAccusationForm,
 		showMarker = showMarker,
 		showReport = showReport,
 		showPing = showPing,

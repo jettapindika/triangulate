@@ -32,6 +32,7 @@ local PuzzleTable = require(Shared.PuzzleTable)
 local CaseLoader = require(script.CaseLoader)
 local DeductionEngine = require(script.DeductionEngine)
 local AccusationService = require(script.AccusationService)
+local AccusationGate = require(script.AccusationGate)
 local RoleAssignment = require(script.RoleAssignment)
 local Matchmaking = require(script.Matchmaking)
 local NPCController = require(script.NPCController)
@@ -124,6 +125,19 @@ type Session = {
 	-- sesi mulai dari node bukti yang aktif pada varian yang dipilih.
 	puzzle: PuzzleTableService.Service,
 	accusation: AccusationService.Session,
+	-- Deduksi Kunci varian ini dan ambang N-nya (PRD §5). Hanya hidup di
+	-- server: yang menyeberang ke Director adalah angka progresnya, bukan
+	-- daftar id-nya -- id `ded_c_*` versus `ded_g_*` menyebut cabang solusi,
+	-- dan itu sama dengan menyebut pelakunya.
+	keyDeductionIds: { string },
+	keyDeductionsRequired: number,
+	-- Gerbang form tuduhan, timer cleanup, dan rekap Cold Case (PRD §5, §6).
+	gate: AccusationGate.Session,
+	-- Pernyataan saksi yang boleh dilihat Director, sudah dibersihkan dan
+	-- diberi id (PRD §4). `AccusationGate.publicStatements` yang merakitnya;
+	-- berkas ini hanya menyimpannya supaya penandaan Kontradiksi bisa memetakan
+	-- id kembali ke pernyataan aslinya tanpa membaca ulang data kasus.
+	statements: { { id: string, who: string, text: string } },
 	telemetry: TelemetryService.Session,
 	startedAt: number,
 }
@@ -193,6 +207,132 @@ local function fireToRoleExcept(
 				if projected ~= nil then
 					remote:FireClient(player, projected)
 				end
+			end
+		end
+	end
+end
+
+--[[
+	Deduksi Kunci yang sudah selesai pada sesi ini.
+
+	Irisan antara yang sudah dikerjakan dan daftar milik varian -- bukan
+	hitungan mentah `completedDeductions`. Resep deduksi di `engine` dibangun
+	dari SELURUH node kasus tanpa filter varian (agar pemain tidak bisa
+	menyimpulkan cabang dari resep yang hilang), jadi hitungan mentah akan
+	memuat deduksi cabang lain dan membuka gerbang terlalu cepat.
+]]
+local function keyDeductionsDone(current: Session): number
+	return AccusationGate.keyDeductionsDone(current.completedDeductions, current.keyDeductionIds)
+end
+
+--[[
+	Apakah node sudah terbuka di sesi ini: deduksi selesai, atau meja bukti
+	selesai. Dipakai rekap Cold Case untuk menghitung kemajuan nyata.
+]]
+local function nodeRevealed(current: Session, node: CaseGraph.Node): boolean
+	if node.type == "deduction" then
+		return current.completedDeductions[node.id] == true
+	end
+	local entry = PuzzleTableService.get(current.puzzle, node.id)
+	return entry ~= nil and entry.solved
+end
+
+--[[
+	Payload `session_state` -- satu view, tiga proyeksi.
+
+	`Net.CLIENT_VIEWS.session_state` yang memutuskan field mana yang sampai ke
+	role mana; berkas ini mengisi seluruh field dan membiarkan `fireToRole`
+	memangkasnya. Field yang hanya ada di proyeksi Director
+	(`key_deductions_done`, `gate_open`, `contradictions_*`) tidak pernah
+	dirakit khusus untuk role lain -- itu yang membuat kebocoran lewat
+	kelalaian di sini mustahil.
+
+	`revealed` dihitung HANYA atas node yang aktif di varian ini. Node cabang
+	lain tidak pernah muncul di angka mana pun, jadi progres tidak bisa dipakai
+	menyimpulkan cabang mana yang sedang berjalan.
+]]
+local function sessionStatePayload(current: Session, role: string): { [string]: any }
+	local case = current.case :: any
+	local active = CaseGraph.activeNodes(case, current.variantId or "")
+	local done = keyDeductionsDone(current)
+
+	local revealed: { [string]: boolean } = {}
+	local deductionsDone = 0
+	for _, node in active do
+		if nodeRevealed(current, node) then
+			revealed[node.id] = true
+			if node.type == "deduction" then
+				deductionsDone += 1
+			end
+		end
+	end
+
+	return {
+		case_id = current.caseId,
+		role = role,
+		phase = "Investigasi",
+		-- PRD §5: rank memperhitungkan waktu; ini anggaran waktunya, sama
+		-- dengan yang dipakai `AccusationService.rank`.
+		seconds_left = math.max(0, Config.RANK_BUDGET_SECONDS - (os.clock() - current.startedAt)),
+		-- Rantai bukti paralel (PRD §6) belum punya representasi di state sesi;
+		-- `CaseGraph` punya bentuknya, tapi memetakan kemajuan per rantai
+		-- adalah pekerjaan clue board minggu 3 yang belum ada di `main`.
+		chains = {},
+		deductions_done = deductionsDone,
+		key_deductions_required = current.keyDeductionsRequired,
+		key_deductions_done = done,
+		contradictions_marked = current.gate.contradictionsMarked,
+		contradictions_required = current.gate.config.contradictionsRequired,
+		gate_open = AccusationGate.gateOpen(current.gate, done, current.keyDeductionsRequired),
+		cleanup_seconds_left = AccusationGate.cleanupSecondsLeft(current.gate, os.clock()),
+		cold_case_recap = AccusationGate.recap(current.gate, {
+			active_nodes = active,
+			-- Penyebut rekap dihitung atas node yang SAMA di semua cabang
+			-- (`common_ids`), supaya "6 dari 6 bukti" tidak berubah arti antar
+			-- varian.
+			common_ids = AccusationGate.commonNodeIds(
+				case.nodes,
+				CaseGraph.variantIds(case),
+				CaseGraph.isActive
+			),
+			revealed = revealed,
+			key_deductions_done = done,
+			key_deductions_required = current.keyDeductionsRequired,
+			attempts_used = current.accusation.attemptsUsed,
+		}),
+	}
+end
+
+--[[
+	Mengirim ulang `session_state` ke tiap pemain, diproyeksikan untuk role-nya
+	masing-masing.
+
+	Payload dirakit per role, bukan sekali untuk semua: field `role` memang
+	harus berisi role PENERIMA, dan `fireToRole` mengirim satu payload yang sama
+	ke semua penerima.
+
+	Dipanggil saat state berubah (report, deduksi, kontradiksi, tuduhan),
+	bukan dari loop. Timer cleanup tetap akurat karena ia dihitung dari deadline
+	-- `math.max(0, deadline - now)` -- bukan dihitung mundur oleh client.
+]]
+local function pushSessionState(): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	local remote = remotes["SessionState"]
+	if remote == nil then
+		warn("[Triangulate] remote 'SessionState' tidak terdaftar")
+		return
+	end
+
+	for userId, role in current.roles do
+		local player = Players:GetPlayerByUserId(userId)
+		if player ~= nil then
+			local projected = Net.forRole("session_state", role, sessionStatePayload(current, role))
+			if projected ~= nil then
+				remote:FireClient(player, projected)
 			end
 		end
 	end
@@ -334,6 +474,49 @@ local function startSession(): ()
 		method = variant.method,
 	}
 
+	-- PRD §5: gerbang form tuduhan dibuka oleh N Deduksi Kunci dan minimal 1
+	-- Kontradiksi. Daftar deduksi kunci milik varian yang dipilih dan ambang N
+	-- dibaca SEKALI di sini, dari data kasus. Keduanya hanya hidup di server:
+	-- yang menyeberang ke Director adalah angkanya (`session_state`), bukan
+	-- daftar id-nya -- id `ded_c_*` versus `ded_g_*` sama saja dengan menyebut
+	-- pelakunya.
+	--
+	-- `solution` tidak dideklarasikan di `CaseLoader.Case` (skema kasus
+	-- dimiliki EXTA-33), jadi dibaca lewat cast `any`, sama seperti `briefings`
+	-- dan `suspects` di bawah.
+	local keyDeductionIds: { string } = {}
+	local solutionByVariant = (loaded :: any).solution
+	if type(solutionByVariant) == "table" and variantId ~= nil then
+		local entry = solutionByVariant[variantId]
+		if type(entry) == "table" and type(entry.required_deductions) == "table" then
+			for _, id in entry.required_deductions do
+				if type(id) == "string" then
+					table.insert(keyDeductionIds, id)
+				end
+			end
+		end
+	end
+
+	local keyDeductionsRequired: number
+	local declaredKeyDeductions = (loaded :: any).key_deductions
+	if type(declaredKeyDeductions) == "number" then
+		keyDeductionsRequired = declaredKeyDeductions
+	else
+		-- Ambang cadangan per tipe kasus (PRD §5). `CaseGraph` yang memegang
+		-- peta `case_type` -> N; `Config.KEY_DEDUCTIONS` adalah angka dasar
+		-- untuk kasus tanpa `case_type` yang dikenal.
+		local caseType = (loaded :: any).case_type
+		local byType = nil
+		if type(caseType) == "string" then
+			byType = CaseGraph.REQUIRED_KEY_DEDUCTIONS[caseType]
+		end
+		if type(byType) == "number" then
+			keyDeductionsRequired = byType
+		else
+			keyDeductionsRequired = Config.KEY_DEDUCTIONS.standard
+		end
+	end
+
 	session = {
 		caseId = caseId,
 		case = loaded,
@@ -348,6 +531,27 @@ local function startSession(): ()
 			solution,
 			Config.ACCUSATION_FIELDS,
 			Config.MAX_ACCUSATIONS
+		),
+		keyDeductionIds = keyDeductionIds,
+		keyDeductionsRequired = keyDeductionsRequired,
+		gate = AccusationGate.newSession({
+			contradictionsRequired = Config.MIN_CONTRADICTIONS,
+			cleanupSeconds = Config.CLEANUP_SECONDS,
+			cleanupPenaltySeconds = Config.CLEANUP_PENALTY_SECONDS,
+			cleanupFloorSeconds = Config.CLEANUP_FLOOR_SECONDS,
+		}, DeductionEngine.gateOpen, os.clock()),
+		-- PRD §4: pernyataan saksi untuk Director, sudah dibersihkan dan diberi
+		-- id stabil. Disimpan supaya penandaan Kontradiksi bisa memetakan id
+		-- kembali ke pernyataan aslinya tanpa membaca ulang data kasus.
+		statements = AccusationGate.publicStatements(
+			(loaded :: any).statements or {},
+			function(statement: any): boolean
+				-- Varian yang tidak dikenal menghasilkan `false` untuk
+				-- pernyataan ber-`variants` -- hanya pernyataan yang berlaku di
+				-- semua cabang yang lolos. Itu perilaku yang benar: tanpa
+				-- varian, tidak ada cabang yang boleh dibocorkan.
+				return CaseGraph.statementAppliesTo(statement, variantId or "")
+			end
 		),
 		telemetry = TelemetryService.newSession(os.clock(), nil, variantId),
 		startedAt = os.clock(),
@@ -442,6 +646,11 @@ local function startSession(): ()
 	else
 		warn(string.format("[Triangulate] kasus '%s' tidak punya meja puzzle aktif", caseId))
 	end
+
+	-- Status awal sesi. Dikirim paling akhir supaya seluruh state sesi sudah
+	-- lengkap saat client pertama kali membacanya -- form tuduhan, progres
+	-- gerbang, dan timer cleanup semuanya berasal dari sini.
+	pushSessionState()
 end
 
 -- ---------------------------------------------------------------------------
@@ -518,9 +727,25 @@ local function handleDeduce(player: Player, clueIds: any): ()
 			pinpoint = pinpoint,
 			unlocks = unlocks,
 		})
+		-- Progres gerbang berubah; Director perlu tahu tanpa menebak.
+		pushSessionState()
 	end
 end
 
+--[[
+	Menerima tuduhan dari Director.
+
+	Urutan pemeriksaan penting: gerbang diperiksa SEBELUM `submit` dipanggil.
+	`AccusationService.submit` menaikkan `attemptsUsed`, jadi tuduhan yang
+	gerbangnya belum terbuka tidak boleh sampai ke sana -- kalau tidak, client
+	yang menembak `Accuse` sejak detik pertama akan menghabiskan 3 percobaan
+	tim tanpa satu pun deduksi dikerjakan. Percobaan yang ditolak gerbang TIDAK
+	dihitung.
+
+	Balasan saat gerbang tertutup hanya memuat angka progres yang sudah
+	Director miliki lewat `session_state`; alasan lengkap dari `AccusationGate`
+	tinggal di log server karena ia menyebut syarat mana yang kurang.
+]]
 local function handleAccuse(player: Player, accusation: any): ()
 	local current = session
 	if current == nil then
@@ -534,6 +759,23 @@ local function handleAccuse(player: Player, accusation: any): ()
 	end
 
 	if type(accusation) ~= "table" then
+		return
+	end
+
+	local done = keyDeductionsDone(current)
+	local admitted, gateProblem =
+		AccusationGate.admit(current.gate, done, current.keyDeductionsRequired)
+	if not admitted then
+		warn(string.format("[Triangulate] tuduhan ditolak gerbang: %s", tostring(gateProblem)))
+		fireToRole("AccusationResult", "accusation_result", {
+			correct_count = current.accusation.correctFieldCount,
+			attempts_left = current.accusation.maxAttempts - current.accusation.attemptsUsed,
+			resolved = false,
+			won = false,
+			pending_confirmation = false,
+			rank = nil,
+		})
+		pushSessionState()
 		return
 	end
 
@@ -553,14 +795,42 @@ local function handleAccuse(player: Player, accusation: any): ()
 		warn(string.format("[Triangulate] tuduhan ditolak: %s", result.reason))
 	end
 
+	-- PRD §5: tiap tuduhan salah menurunkan rank dan memajukan timer cleanup.
+	-- Percobaan yang menunggu konfirmasi bukan "salah", jadi ia tidak kena
+	-- penalti.
+	if result.accepted and not result.won and not result.pendingConfirmation then
+		local left = AccusationGate.applyWrongPenalty(current.gate, os.clock())
+		warn(string.format("[Triangulate] timer cleanup dimajukan; sisa %d detik", left))
+	end
+
+	-- PRD §5: setelah 3 salah, kasus jadi Cold Case.
+	if result.resolved and not result.won then
+		TelemetryService.record(current.telemetry, {
+			kind = "cold_case",
+			role = role,
+			t = os.clock(),
+			detail = tostring(current.accusation.attemptsUsed),
+		})
+	end
+
 	fireToRole("AccusationResult", "accusation_result", {
 		correct_count = result.correctCount,
 		attempts_left = result.attemptsLeft,
 		resolved = result.resolved,
 		won = result.won,
 		pending_confirmation = result.pendingConfirmation,
-		rank = nil,
+		-- PRD §5: rank hanya bermakna saat kasus benar-benar berakhir. Kasus
+		-- yang habis percobaan selalu berakhir di rank terendah.
+		rank = if result.resolved
+			then AccusationService.rank(
+				os.clock() - current.startedAt,
+				current.accusation.attemptsUsed,
+				0,
+				Config.RANK_BUDGET_SECONDS
+			)
+			else nil,
 	})
+	pushSessionState()
 end
 
 local function handleConfirm(player: Player, _: any): ()
@@ -587,13 +857,105 @@ local function handleConfirm(player: Player, _: any): ()
 		resolved = true,
 		won = true,
 		pending_confirmation = false,
+		-- PRD §5: rank S/A/B/C dari waktu, jumlah tuduhan, dan hint terpakai.
+		-- `hintsUsed` masih 0 karena kuota hint belum ada produsennya (PRD §13,
+		-- pasca-MVP); angkanya benar hari ini justru karena belum ada hint.
 		rank = AccusationService.rank(
 			os.clock() - current.startedAt,
 			current.accusation.attemptsUsed,
 			0,
-			900
+			Config.RANK_BUDGET_SECONDS
 		),
 	})
+	pushSessionState()
+end
+
+--[[
+	Menandai Kontradiksi antara sebuah pernyataan saksi dan sebuah Clue Card
+	(PRD §4: "Director menandai Kontradiksi antara pernyataan dan bukti").
+
+	Client mengirim ID, bukan kebenaran. `statementId` merujuk pernyataan yang
+	MEMANG dikirim ke Director (`session.statements`); pernyataan yang tidak ada
+	di daftar itu ditolak sebelum menyentuh gerbang, supaya client tidak bisa
+	mengintip pernyataan cabang lain lewat perbedaan jawaban "diterima" versus
+	"ditolak". `clueId` diteruskan apa adanya: `AccusationGate` yang mencocokkan
+	`contradicted_by` dan hanya mengembalikan boolean -- kebenarannya tidak
+	pernah dikirim ke client, dan penandaan yang salah tetap tercatat sebagai
+	percobaan yang gagal, bukan sebagai kesalahan yang bisa dipelajari.
+]]
+local function handleMarkContradiction(player: Player, payload: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	local role = roleOf(player.UserId)
+	if role ~= "Director" then
+		-- PRD §4: hanya Director yang memegang clue board.
+		return
+	end
+
+	if type(payload) ~= "table" then
+		return
+	end
+
+	local statementId = (payload :: { [string]: any }).statement_id
+	local clueId = (payload :: { [string]: any }).clue_id
+	if type(statementId) ~= "string" or type(clueId) ~= "string" then
+		return
+	end
+
+	-- Pemetaan id -> pernyataan asli. Id dirakit `AccusationGate.publicStatements`
+	-- dari indeks array `case.statements`, jadi indeksnya dibaca kembali dari
+	-- id. Dua pemeriksaan diperlukan: id harus berbentuk `stmt_<n>` (bukan
+	-- string sembarang), dan id itu harus ada di daftar yang dikirim ke
+	-- Director.
+	local index = tonumber(string.match(statementId, "^stmt_(%d+)$"))
+	if index == nil then
+		return
+	end
+
+	local publicList = current.statements
+	local known = false
+	for _, entry in publicList do
+		if entry.id == statementId then
+			known = true
+			break
+		end
+	end
+	if not known then
+		return
+	end
+
+	local rawStatements = (current.case :: any).statements
+	if type(rawStatements) ~= "table" then
+		return
+	end
+	local statement = rawStatements[index]
+	if type(statement) ~= "table" then
+		return
+	end
+
+	local accepted, correct, reason =
+		AccusationGate.markContradiction(current.gate, statementId, statement, clueId)
+
+	TelemetryService.record(current.telemetry, {
+		kind = "contradiction",
+		role = role,
+		t = os.clock(),
+		detail = tostring(correct),
+	})
+
+	if not accepted then
+		warn(string.format("[Triangulate] kontradiksi ditolak: %s", tostring(reason)))
+		return
+	end
+
+	-- PRD §5: kontradiksi yang benar adalah salah satu syarat gerbang, jadi
+	-- progresnya dikirim ulang. `correct` sengaja TIDAK masuk payload: client
+	-- hanya melihat jumlah `contradictions_marked` bertambah, tidak tahu mana
+	-- penandaan yang sah.
+	pushSessionState()
 end
 
 local function handleReport(player: Player, payload: any): ()
@@ -763,6 +1125,11 @@ local function handlePlacePiece(player: Player, payload: any): ()
 		if nextEntry ~= nil then
 			fireToRole("PuzzleState", "puzzle_state", PuzzleTable.clientPayload(nextEntry.state))
 		end
+
+		-- Bukti yang terbuka menambah `evidence_found` di rekap dan mengubah
+		-- jumlah rantai yang hidup; state dikirim ulang supaya Director tidak
+		-- bekerja dari angka basi.
+		pushSessionState()
 	end
 end
 
@@ -908,6 +1275,7 @@ remotes.SubmitDeduction.OnServerEvent:Connect(handleDeduce)
 remotes.PlacePiece.OnServerEvent:Connect(handlePlacePiece)
 remotes.Accuse.OnServerEvent:Connect(handleAccuse)
 remotes.ConfirmAccusation.OnServerEvent:Connect(handleConfirm)
+remotes.MarkContradiction.OnServerEvent:Connect(handleMarkContradiction)
 remotes.Report.OnServerEvent:Connect(handleReport)
 remotes.Ping.OnServerEvent:Connect(handlePing)
 remotes.SetTarget.OnServerEvent:Connect(handleSetTarget)

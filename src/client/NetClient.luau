@@ -31,6 +31,7 @@ export type Bound = {
 	RequestHint: RemoteEvent,
 	ConfirmAccusation: RemoteEvent,
 	PlacePiece: RemoteEvent,
+	MarkContradiction: RemoteEvent,
 }
 
 -- Menunggu seluruh remote muncul. Dipanggil sekali di awal; kalau salah satu
@@ -62,6 +63,7 @@ function NetClient.bind(shared: Instance): Bound
 		RequestHint = waitFor("RequestHint"),
 		ConfirmAccusation = waitFor("ConfirmAccusation"),
 		PlacePiece = waitFor("PlacePiece"),
+		MarkContradiction = waitFor("MarkContradiction"),
 	}
 end
 
@@ -120,6 +122,15 @@ function NetClient.placePiece(
 	v: number
 ): ()
 	bound.PlacePiece:FireServer({ node_id = nodeId, piece_id = pieceId, u = u, v = v })
+end
+
+-- PRD §4: Director menandai Kontradiksi antara pernyataan saksi dan bukti.
+--
+-- Yang dikirim hanya dua ID. Client tidak pernah tahu mana penandaan yang
+-- benar: server mengembalikan boolean-nya ke dirinya sendiri, dan client
+-- hanya melihat `contradictions_marked` bertambah di `session_state`.
+function NetClient.markContradiction(bound: Bound, statementId: string, clueId: string): ()
+	bound.MarkContradiction:FireServer({ statement_id = statementId, clue_id = clueId })
 end
 
 return NetClient
