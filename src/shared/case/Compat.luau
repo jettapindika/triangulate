@@ -13,7 +13,7 @@
 
 local Compat = {}
 
-local robloxScript: any = (script :: any)
+local robloxScript: any = script :: any
 
 function Compat.requireSibling(name: string): any
 	if robloxScript ~= nil then

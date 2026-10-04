@@ -1,0 +1,25 @@
+{
+  "name": "Triangulate",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": { "$path": "src/shared" }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Server": { "$path": "src/server" }
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Cases": { "$path": "data/cases" }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Client": { "$path": "src/client" }
+      }
+    }
+  }
+}

@@ -23,6 +23,29 @@
       "description": "N Deduksi Kunci yang membuka form tuduhan. Harus sama dengan panjang required_deductions tiap varian dan tidak melebihi jumlah deduksi yang bisa dicapai."
     },
     "location": { "type": "string", "minLength": 1 },
+    "suspects": {
+      "$ref": "#/$defs/idList",
+      "description": "Ruang pilihan Pelaku untuk form tuduhan Director (PRD §5). Kandidat, bukan jawaban."
+    },
+    "motives": {
+      "$ref": "#/$defs/idList",
+      "description": "Ruang pilihan Motif untuk form tuduhan Director (PRD §5). Kandidat, bukan jawaban."
+    },
+    "methods": {
+      "$ref": "#/$defs/idList",
+      "description": "Ruang pilihan Cara untuk form tuduhan Director (PRD §5). Kandidat, bukan jawaban. Wajib memuat setiap nilai `variants[].method`."
+    },
+    "briefings": {
+      "type": "object",
+      "description": "Role Card per role untuk scaffold server (PRD §9). Terpisah dari `briefing`: `briefing` adalah teks prosa yang divalidasi CaseValidator, `briefings` adalah bentuk terstruktur yang diproyeksikan Net.forRole view `briefing` (kunci role berhuruf besar).",
+      "required": ["Searcher", "Handler", "Director"],
+      "additionalProperties": false,
+      "properties": {
+        "Searcher": { "$ref": "#/$defs/roleCard" },
+        "Handler": { "$ref": "#/$defs/roleCard" },
+        "Director": { "$ref": "#/$defs/roleCard" }
+      }
+    },
     "variants": {
       "type": "array",
       "minItems": 1,
@@ -74,6 +97,34 @@
         "searcher": { "type": "string", "minLength": 1 },
         "handler": { "type": "string", "minLength": 1 },
         "director": { "type": "string", "minLength": 1 }
+      }
+    },
+    "roleCard": {
+      "type": "object",
+      "required": ["case_id", "location", "objective", "knowns", "unknowns"],
+      "additionalProperties": false,
+      "description": "Role Card (PRD §9): \"Kamu tahu apa / Tidak tahu apa / Tugas pertamamu\". Fieldnya harus persis sama dengan allowlist Net.CLIENT_VIEWS.briefing, karena Net.project menyalin nilai apa adanya.",
+      "properties": {
+        "case_id": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "knowns": { "$ref": "#/$defs/idList" },
+        "unknowns": { "$ref": "#/$defs/idList" },
+        "target": { "type": "string", "minLength": 1, "description": "Id node pertama yang harus dikerjakan role ini. Searcher/Handler." },
+        "statements": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Pernyataan saksi untuk Director. WAJIB sudah bersih: `lie` dan `contradicted_by` adalah field rahasia (Net.SECRET_FIELDS) dan Net.project menyalin nilai ini apa adanya.",
+          "items": {
+            "type": "object",
+            "required": ["who", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "who": { "type": "string", "minLength": 1 },
+              "text": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
       }
     },
     "node": {
