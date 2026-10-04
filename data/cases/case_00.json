@@ -1,0 +1,100 @@
+{
+  "case_id": "case_00",
+  "title": "Pena Perak yang Hilang",
+  "case_type": "case0",
+  "key_deductions": 2,
+  "location": "agency_hq",
+  "suspects": ["rio", "dewi"],
+  "motives": ["tukar_pena", "dijual"],
+  "methods": ["kotak_pribadi"],
+  "variants": [
+    {
+      "variant_id": "v_tutorial",
+      "label": "Pena tertukar",
+      "culprit": "rio",
+      "motive": "tukar_pena",
+      "method": "kotak_pribadi"
+    }
+  ],
+  "briefing": {
+    "searcher": "Kamu di ruang arsip markas. Tiga benda bisa diperiksa: buku tamu di meja depan, slot pena di meja arsip, dan kotak bertanda bintang di rak kurir. Periksa, lalu tekan Report.",
+    "handler": "Tiga bukti menunggu di mejamu. Tiap kunci dari Searcher membuka satu bukti: susun sobekan buku tamu, urutkan tiga foto meja, dan pecahkan label kotak.",
+    "director": "Gabungkan dua Clue Card sampai gerbang terbuka, tandai satu Kontradiksi, lalu isi form tuduhan. Bandingkan pernyataan Rio dengan foto meja arsip."
+  },
+  "briefings": {
+    "Searcher": {
+      "case_id": "case_00",
+      "location": "agency_hq",
+      "objective": "Temukan tiga benda di ruang arsip: buku tamu di meja depan, slot pena di meja arsip, dan kotak bertanda bintang di rak kurir. Periksa, lalu tekan Report.",
+      "knowns": [
+        "Tiga benda bertanda ada di ruang arsip",
+        "Report mengirim foto objek dan tag lokasi tanpa mengetik"
+      ],
+      "unknowns": ["Siapa yang memindahkan pena", "Isi tiap bukti"],
+      "target": "obj_buku_tamu"
+    },
+    "Handler": {
+      "case_id": "case_00",
+      "location": "agency_hq",
+      "objective": "Rakit tiga bukti di meja: susun sobekan buku tamu, urutkan tiga foto meja, dan pecahkan label kotak.",
+      "knowns": ["Arsip kasus ada di meja", "Tiap bukti butuh kunci dari Searcher"],
+      "unknowns": ["Siapa pelakunya", "Apa motif dan caranya"],
+      "target": "ev_buku_tamu"
+    },
+    "Director": {
+      "case_id": "case_00",
+      "location": "agency_hq",
+      "objective": "Gabungkan dua Clue Card sampai gerbang terbuka, tandai satu Kontradiksi, lalu isi form tuduhan.",
+      "knowns": ["Ada dua pernyataan saksi di clue board", "Minimal satu pernyataan berbohong"],
+      "unknowns": ["Saksi mana yang berbohong", "Kombinasi Clue Card yang benar"],
+      "statements": [
+        {
+          "who": "rio",
+          "text": "Aku tidak menyentuh meja arsip hari itu. Aku cuma antar paket lalu langsung keluar."
+        },
+        {
+          "who": "dewi",
+          "text": "Aku jaga meja depan seharian. Rio memang lewat, tapi aku tidak melihat dia ke meja arsip."
+        }
+      ]
+    }
+  },
+  "nodes": [
+    { "id": "obj_buku_tamu", "type": "object", "label": "Buku tamu arsip", "gives_key": "key_a" },
+    { "id": "ev_buku_tamu", "type": "evidence", "label": "Susun sobekan halaman buku tamu", "puzzle": "torn_doc", "needs": ["key_a"], "yields": "clue_a" },
+    { "id": "clue_a", "type": "clue_card", "label": "Hanya Rio yang masuk ruang arsip antara pukul 15.00 dan 15.30, yaitu pukul 15.10.", "source": "ev_buku_tamu" },
+
+    { "id": "obj_slot_pena", "type": "object", "label": "Slot pena di meja arsip", "gives_key": "key_b" },
+    { "id": "ev_slot_pena", "type": "evidence", "label": "Urutkan tiga foto meja arsip", "puzzle": "timeline", "needs": ["key_b"], "yields": "clue_b" },
+    { "id": "clue_b", "type": "clue_card", "label": "Foto 14.55 slot terisi pena berukir L. Foto 15.05 Rio menaruh pena retak di tepi meja. Foto 15.20 slot kosong.", "source": "ev_slot_pena" },
+
+    { "id": "obj_kotak_titipan", "type": "object", "label": "Kotak titipan bertanda bintang", "gives_key": "key_c" },
+    { "id": "ev_label_kotak", "type": "evidence", "label": "Pecahkan label kotak dengan roda kode", "puzzle": "cipher", "needs": ["key_c"], "yields": "clue_c" },
+    { "id": "clue_c", "type": "clue_card", "label": "Kotak bertanda bintang adalah kotak pribadi kurir. Kotak itu keluar dari ruang arsip pukul 15.12.", "source": "ev_label_kotak" },
+
+    { "id": "ded_pena_1", "type": "deduction", "label": "Rio berada di ruang arsip tepat saat slot pena kosong.", "needs": ["clue_a", "clue_b"], "supports": ["culprit", "motive"] },
+    { "id": "ded_pena_2", "type": "deduction", "label": "Rio membawa kotak pribadinya keluar dua menit setelah masuk. Pena ikut di dalam kotak.", "needs": ["clue_a", "clue_c"], "supports": ["method"] },
+    { "id": "ded_pena_3", "type": "deduction", "label": "Rio menaruh penanya yang retak di meja dan membawa pena berukir L. Pena itu tertukar, bukan dicuri untuk dijual.", "needs": ["clue_b", "clue_c"], "supports": ["motive"] }
+  ],
+  "statements": [
+    {
+      "who": "rio",
+      "text": "Aku tidak menyentuh meja arsip hari itu. Aku cuma antar paket lalu langsung keluar.",
+      "lie": true,
+      "contradicted_by": "clue_b"
+    },
+    {
+      "who": "dewi",
+      "text": "Aku jaga meja depan seharian. Rio memang lewat, tapi aku tidak melihat dia ke meja arsip.",
+      "lie": false
+    }
+  ],
+  "solution": {
+    "v_tutorial": {
+      "culprit": "rio",
+      "motive": "tukar_pena",
+      "method": "kotak_pribadi",
+      "required_deductions": ["ded_pena_1", "ded_pena_2"]
+    }
+  }
+}
