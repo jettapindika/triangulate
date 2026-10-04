@@ -1,0 +1,56 @@
+{
+  "case_id": "fixture_dead_end",
+  "title": "Fixture: rantai buntu",
+  "case_type": "daily",
+  "key_deductions": 3,
+  "location": "gallery",
+  "variants": [
+    { "variant_id": "v1", "label": "Cabang kurator", "culprit": "curator", "motive": "debt", "method": "access_card" },
+    { "variant_id": "v2", "label": "Cabang satpam", "culprit": "guard", "motive": "revenge", "method": "alarm_off" }
+  ],
+  "briefing": {
+    "searcher": "Cari objek bertanda lalu tekan Report.",
+    "handler": "Rakit potongan bukti yang kuncinya sudah kamu pegang.",
+    "director": "Gabungkan Clue Card dan susun tuduhan akhir."
+  },
+  "nodes": [
+    { "id": "obj_schedule", "type": "object", "label": "Sobekan jadwal", "gives_key": "key_a" },
+    { "id": "ev_schedule", "type": "evidence", "label": "Jadwal jaga", "puzzle": "torn_doc", "needs": ["key_a"], "yields": "clue_schedule" },
+    { "id": "clue_schedule", "type": "clue_card", "label": "Satpam off duty jam 21.00", "source": "ev_schedule" },
+
+    { "id": "obj_access", "type": "object", "label": "Kartu akses", "gives_key": "key_b" },
+    { "id": "ev_access", "type": "evidence", "label": "Log akses", "puzzle": "cipher", "needs": ["key_b"], "yields": "clue_access" },
+    { "id": "clue_access", "type": "clue_card", "label": "Kartu kurator dipakai jam 21.10", "source": "ev_access" },
+
+    { "id": "obj_photo", "type": "object", "label": "Tumpukan foto", "gives_key": "key_c" },
+    { "id": "ev_photo", "type": "evidence", "label": "Timeline foto", "puzzle": "timeline", "needs": ["key_c"], "yields": "clue_photo" },
+    { "id": "clue_photo", "type": "clue_card", "label": "Kolektor tahu lukisan palsu", "source": "ev_photo" },
+
+    { "id": "ded_culprit", "type": "deduction", "label": "Kurator punya akses", "needs": ["clue_schedule", "clue_access"], "supports": ["culprit"] },
+    { "id": "ded_method", "type": "deduction", "label": "Masuk lewat jalur samping", "needs": ["clue_schedule", "clue_photo"], "supports": ["method"] },
+    { "id": "ded_motive", "type": "deduction", "label": "Motif finansial", "needs": ["clue_access", "clue_photo"], "supports": ["motive"] },
+
+    { "id": "obj_vault", "type": "object", "label": "Papan kode brankas", "variants": ["v2"], "gives_key": "key_vault" },
+    { "id": "ev_vault", "type": "evidence", "label": "Log brankas", "variants": ["v2"], "puzzle": "cipher", "needs": ["key_vault"], "yields": "clue_vault" },
+    { "id": "clue_vault", "type": "clue_card", "label": "Brankas dibuka jam 21.30", "source": "ev_vault" },
+    { "id": "ded_vault", "type": "deduction", "label": "Isi brankas diambil", "needs": ["clue_vault", "clue_schedule"], "supports": ["method"] }
+  ],
+  "statements": [
+    { "who": "curator", "text": "Saya pulang jam 20.00 dan tidak kembali.", "lie": true, "contradicted_by": "clue_access" },
+    { "who": "guard", "text": "Saya jaga penuh sampai pagi.", "lie": false }
+  ],
+  "solution": {
+    "v1": {
+      "culprit": "curator",
+      "motive": "debt",
+      "method": "access_card",
+      "required_deductions": ["ded_culprit", "ded_method", "ded_motive"]
+    },
+    "v2": {
+      "culprit": "guard",
+      "motive": "revenge",
+      "method": "alarm_off",
+      "required_deductions": ["ded_culprit", "ded_motive", "ded_vault"]
+    }
+  }
+}
