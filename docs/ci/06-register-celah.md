@@ -42,14 +42,14 @@ Yang paling mendesak bukan CI, melainkan **identitas tulis tunggal** (C-01) — 
 
 ## Tinggi
 
-### C-03 — Tidak ada CI, dan tidak ada satu pun check di sebelas PR terbuka
+### C-03 — Tidak ada CI yang berjalan, dan tidak ada satu pun check yang memeriksa PR
 
 | | |
 |---|---|
-| Bukti | `gh api repos/.../actions/workflows` → `{"total_count": 0, "workflows": []}`. `gh api repos/.../actions/runners` → 0 runner. Sebelas PR terbuka tidak punya status check. |
-| Dampak | Tidak ada sinyal otomatis apa pun sebelum merge. Kesalahan format, kode mati, dan kasus JSON yang tidak valid bisa masuk `main` tanpa terdeteksi. PRD §17 menargetkan playtest minggu 7 — tanpa CI, regresi baru ketahuan saat playtest. |
+| Bukti | Saat potret: `gh api repos/.../actions/workflows` → `{"total_count": 0, "workflows": []}`; `gh api repos/.../actions/runners` → 0 runner; sebelas PR terbuka tanpa status check. Setelah PR #13 (EXTA-34) dibuka: workflow `CI` **terdaftar** (`total_count: 1`) dan satu run terpicu, tetapi `conclusion: skipped` dengan **keempat job `skipped`, `steps: 0`** karena repo variable `CI_ENABLED` tidak ada (`total_count: 0`). Rincian di `03-pipeline-ci.md` §4.7. |
+| Dampak | Tidak ada sinyal otomatis apa pun sebelum merge. Kesalahan format, kode mati, dan kasus JSON yang tidak valid bisa masuk `main` tanpa terdeteksi. PRD §17 menargetkan playtest minggu 7 — tanpa CI, regresi baru ketahuan saat playtest. Workflow yang terdaftar tetapi selalu `skipped` tidak mengubah apa pun: ia hanya membuat PR menampilkan empat check berwarna abu-abu alih-alih "no checks", dan check abu-abu yang tidak pernah memeriksa justru bisa disalahbaca sebagai aman. |
 | Pemilik keputusan | Devan (draft) → Nathan — CTO/CIO (aktivasi) |
-| Usulan | Pipeline di `03-pipeline-ci.md`, dibuat inert lewat guard `vars.CI_ENABLED == 'true'` supaya tidak jalan sebelum owner mengaktifkan. |
+| Usulan | Pipeline di `03-pipeline-ci.md`, dibuat inert lewat guard `vars.CI_ENABLED == 'true'` supaya tidak jalan sebelum owner mengaktifkan. **Aktivasi (`gh variable set CI_ENABLED --body true`) adalah satu-satunya langkah yang mengubah keadaan ini**, dan itu bukan tindakan Devan. |
 
 ### C-04 — Toolchain Luau tidak terpasang; `~/.rokit/bin` berisi symlink rusak
 

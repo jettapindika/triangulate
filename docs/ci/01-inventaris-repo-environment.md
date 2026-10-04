@@ -12,7 +12,7 @@ Semua baris di bawah adalah hasil perintah yang benar-benar dijalankan pada **20
 |---|---|---|
 | Repo terhubung ke Multica | 1, sebagai **project resource** (bukan registry workspace) | `multica project resource list`, `.multica/project/resources.json` |
 | Registry repo workspace | **kosong** (`[]`) | `multica repo list --output json` |
-| CI berjalan | **tidak ada** — 0 workflow terdaftar | `gh api repos/jettapindika/triangulate/actions/workflows` |
+| CI berjalan | **tidak ada.** Saat pembacaan awal: 0 workflow terdaftar. Sejak branch EXTA-34 (PR #13) di-push 2026-10-04, workflow `CI` terdaftar (`total_count: 1`) tetapi seluruh job `skipped` — jadi yang bertambah hanya pendaftaran, bukan eksekusi | `gh api repos/jettapindika/triangulate/actions/workflows`, `.../actions/runs` |
 | Branch protection / ruleset | **tidak ada** — `main` terbuka untuk push langsung | `gh api repos/.../branches/main/protection` → HTTP 404 |
 | Tinjauan berbasis PR | 11 PR terbuka, **belum ada yang di-merge**; tidak ada review yang diwajibkan | `gh pr list --state all`, `gh api repos/.../branches/main/protection` |
 | Secret di repo | 0 repo secret, 0 repo variable | `gh api repos/.../actions/secrets`, `.../variables` |
@@ -83,15 +83,15 @@ Branch di remote (12 total, semuanya `protected: false`):
 | `agent/clara-cmo/506861bc5a55` | `26568e0` EXTA-41 hapus klaim kadens konten | EXTA-41 | **#2 OPEN** | menunggu review |
 | `agent/dimas-pencatat-pengeluaran-har/068af65f3b7c` | `da96141` EXTA-45 template buku besar | EXTA-45 | **#1 OPEN** | menunggu review |
 | `agent/rani-data-metrics-engineer/98b3f96538b5` | `d4bb57c` EXTA-36 kamus metrik | EXTA-36 | **#5 OPEN** | menunggu review |
-| `agent/devan-infrastructure-runtime-e/bd869e15e75b` | dokumen CI + workflow draft | EXTA-34 | dibuka oleh issue ini | branch kerja Devan |
+| `agent/devan-infrastructure-runtime-e/bd869e15e75b` | `05caefc` EXTA-34 CI/CD + dokumen | EXTA-34 | **#13 OPEN** | branch kerja Devan |
 
-Base setiap PR: `main`. Merge: belum ada satu pun. Angka bergerak cepat — repo ini menerima PR baru dari workstream lain setiap beberapa menit, jadi tabel di atas adalah potret **2026-10-04 sekitar 10:30Z**, bukan nilai tetap.
+Base setiap PR: `main`. Merge: belum ada satu pun. Angka bergerak cepat — repo ini menerima PR baru dari workstream lain setiap beberapa menit, jadi tabel di atas adalah potret **2026-10-04 sekitar 10:30Z**, bukan nilai tetap. Pada akhir sesi kerja ini jumlahnya sudah bergerak dari **11 → 13** PR terbuka (EXTA-39 dan EXTA-34 masuk setelah potret), tetap **0 merged**. Karena itu setiap angka "11" di bawah ini berarti "11 pada potret itu", bukan keadaan sekarang.
 
 Yang terbaca dari data ini, dan relevan untuk desain gate:
 
 1. **Konvensi judul PR sudah benar tanpa dipaksa.** Kesebelas PR memakai prefiks `EXTA-<n>: ` — jadi aturan "judul PR memuat identifier issue" di `02-checklist-koneksi-repo.md` §4 bukan aturan baru, hanya formalisasi kebiasaan yang sudah jalan.
 2. **Loop revisi sudah hidup.** Beberapa branch (`bagas`, `clara`, `kirana`, `bima`, `rangga`) punya commit kedua yang isinya perbaikan ("perjelas klaim", "hapus klaim") — artinya review manusia memang terjadi, hanya lewat percakapan, bukan lewat mekanisme GitHub.
-3. **Tidak ada checks yang berjalan di PR mana pun.** `gh api repos/.../actions/workflows` → `total_count: 0`, jadi PR GitHub menampilkan "no checks" — reviewer tidak punya sinyal otomatis apa pun.
+3. **Tidak ada checks yang berjalan di PR mana pun.** Saat potret ini diambil, `gh api repos/.../actions/workflows` → `total_count: 0`, jadi PR GitHub menampilkan "no checks" — reviewer tidak punya sinyal otomatis apa pun. Setelah PR #13 dibuka, workflow `CI` terdaftar (`total_count: 1`) dan satu run terpicu, tetapi **keempat job-nya `skipped`** karena `CI_ENABLED` kosong (`03-pipeline-ci.md` §4.7). Jadi yang berubah hanyalah pendaftaran workflow; tetap belum ada check yang memeriksa apa pun.
 4. **Nama branch tidak memuat identifier issue.** Pola `agent/<slug-agent>/<12-hex-hash>` dibuat otomatis oleh `multica repo checkout`; hash-nya adalah id task, bukan nomor issue. Karena itu identifier **wajib** ada di judul PR — dan itu satu-satunya tempat ia bisa diandalkan.
 5. **Tidak ada satu pun merge.** 11 PR terbuka, 0 merged. Tanpa gate, tidak ada yang memaksa keputusan merge — dan tanpa CI, tidak ada sinyal untuk memutuskan.
 

@@ -7,14 +7,14 @@ Prasyarat: tidak satu pun perintah aktivasi di dokumen ini dijalankan. Workflow 
 
 Dokumen ini merancang pipeline GitHub Actions untuk repo `jettapindika/triangulate`, beserta berkas konfigurasi yang menyertainya. Seluruh perintah di dokumen ini sudah dijalankan sendiri pada 2026-10-04 di mesin kerja `ztvns-Mac.local`; exit code dilaporkan apa adanya. Yang tidak berhasil dijalankan ditandai `TIDAK TERVERIFIKASI`.
 
-Ringkas keadaan hari ini: repo punya **0 workflow**, **0 required status check**, dan `main` **tidak terproteksi** (`gh api repos/jettapindika/triangulate/branches/main/protection` → HTTP 404 `"Branch not protected"`). Jadi dokumen ini mengusulkan sesuatu yang belum ada, bukan mendokumentasikan yang sudah jalan.
+Ringkas keadaan hari ini: repo punya **0 required status check**, dan `main` **tidak terproteksi** (`gh api repos/jettapindika/triangulate/branches/main/protection` → HTTP 404 `"Branch not protected"`). Sebelum branch PR ini di-push, `gh api repos/jettapindika/triangulate/actions/workflows` juga mengembalikan `total_count: 0`; setelah push, workflow **terdaftar** dan satu run terpicu dengan seluruh job `skipped` (§4.7). Jadi dokumen ini mengusulkan sesuatu yang belum berjalan, bukan mendokumentasikan yang sudah jalan.
 
 ## 1. Status dan artinya
 
 | Pertanyaan | Jawaban |
 |---|---|
 | Apakah pipeline ini sudah berjalan? | **Belum.** Berkas workflow ada di repo, tetapi setiap job berguard `if: vars.CI_ENABLED == 'true'` dan repository variable `CI_ENABLED` **belum ada** (`gh api repos/.../actions/variables` → `{"total_count": 0}`). |
-| Apa yang terjadi kalau PR dibuka sekarang? | GitHub mendaftarkan workflow, mengevaluasi guard job, menemukan `vars.CI_ENABLED` kosong, lalu menandai **seluruh job `skipped`**. Tidak ada check yang gagal, tidak ada menit yang terpakai (job `skipped` tidak menagih menit). |
+| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati**, bukan lagi dugaan. Pada PR #13, GitHub mendaftarkan workflow dan memicu satu run `event: pull_request` yang selesai `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rinciannya di §4.7. |
 | Apakah PR jadi terblokir? | **Tidak**, dan itu disengaja. Required status check belum dipasang (§5), jadi `skipped` tidak menghalangi merge. Ini mencegah pipeline baru memblokir PR-PR yang sudah terbuka saat workflow ini mendarat. |
 | Kapan ia mulai bekerja? | Setelah owner menjalankan satu perintah aktivasi di §5.1. |
 | Apakah ini "sudah ada CI"? | **Belum.** Yang ada adalah **usulan yang inert**. Sampai `CI_ENABLED` diset dan PR-nya di-merge, repo tetap tanpa CI. |
@@ -337,6 +337,26 @@ Langkah 1–5 hijau, jadi keputusan penyelarasan versi (§3.1) dan penggabungan 
 
 Kontrol negatif untuk langkah 1: `stylua --check .` dengan `column_width = 120` pada pohon yang sama → **exit 1**. Jadi `column_width = 100` bukan selera, melainkan nilai yang membuat kode EXTA-32 lolos.
 
+### 4.7 Guard inert teramati pada PR nyata (bukan lagi asumsi)
+
+Sebelumnya status "pipeline belum berjalan" hanya bisa dinyatakan dari `actions/workflows` → `total_count: 0`. Setelah branch PR ini di-push, GitHub **mendaftarkan workflow** dan **memicu satu run** — jadi guard-nya sekarang teramati bekerja, bukan disimpulkan.
+
+Potret 2026-10-04 11:14 UTC, PR #13:
+
+| Perintah | Hasil |
+|---|---|
+| `gh api repos/jettapindika/triangulate/actions/workflows` | `total_count: 1` — `CI`, path `.github/workflows/ci.yml`, `state: active` |
+| `gh api .../actions/runs` | `total_count: 1` — `name: CI`, `event: pull_request`, `status: completed`, `conclusion: skipped` |
+| `gh api .../actions/runs/37198053872/jobs` | empat job (`lint`, `analyze`, `test`, `validate-case`), **semuanya `conclusion: skipped`, `steps: 0`** |
+| `gh pr checks 13` | `analyze skipping`, `lint skipping`, `test skipping`, `validate-case skipping` |
+
+`steps: 0` pada keempat job adalah buktinya: tidak satu pun langkah dijalankan, jadi **tidak ada menit Actions yang ditagih** dan tidak ada unduhan tool. Penyebabnya `vars.CI_ENABLED` yang kosong (repo variables `total_count: 0`) — persis yang dimaksud guard di §3.3.
+
+Dua konsekuensi yang perlu dicatat:
+
+1. **Angka `actions/workflows` bergerak.** Nilainya `1` selama branch PR ini ada, dan akan kembali `0` bila branch dihapus tanpa merge. Karena itu `01-inventaris-repo-environment.md` mencatat `total_count: 0` sebagai potret **sebelum** push, dan itu tidak salah — hanya beda waktu.
+2. **Workflow terdaftar bukan berarti CI aktif.** Yang aktif adalah *pendaftaran* workflow; eksekusinya masih nol. "CI jalan" baru benar setelah `CI_ENABLED` diset dan ada job dengan `conclusion: success`.
+
 ## 5. Gate sebelum merge
 
 ### 5.1 Aktivasi dan deaktivasi
@@ -388,6 +408,22 @@ JSON
 `validate-case` sengaja **tidak** dimasukkan ke `contexts` karena job itu bergantung pada berkas milik EXTA-33 yang belum ada. Memasukkan check yang belum pernah hijau akan memblokir semua merge. Tambahkan setelah validator mendarat.
 
 Catatan penting soal `analyze`: selama `continue-on-error: true` masih terpasang (§3.5), job `analyze` **selalu** selesai dengan status sukses — galat tipe muncul sebagai anotasi `::warning::`, bukan sebagai kegagalan job. Jadi mencantumkannya di `contexts` sekarang tidak berbahaya (tidak akan pernah memblokir), tetapi juga **belum memberi gerbang tipe apa pun**. `analyze` baru benar-benar bergerbang setelah syarat di §3.5 dipenuhi. Kalau owner ingin `contexts` mencerminkan gerbang yang nyata hari ini, isi saja `["lint", "test"]`.
+
+#### Job `skipped` dan required check — satu jebakan yang harus dihindari
+
+Guard `vars.CI_ENABLED` ada di tingkat **job**, dan itu pilihan yang disengaja. Bedanya menentukan:
+
+| Bentuk skip | Check yang dilaporkan | Akibat di required status check |
+|---|---|---|
+| Job di-skip oleh `if:` di tingkat job (dipakai di sini) | job dilaporkan `skipped` | **Dianggap sukses** — tidak memblokir merge |
+| Seluruh workflow tidak terpicu oleh filter `paths:`/`branches:` | **tidak ada check yang dilaporkan** | **Menunggu selamanya** — PR tidak bisa merge tanpa jalan keluar |
+
+Sumber: dokumentasi GitHub untuk troubleshooting required status checks. `TIDAK TERVERIFIKASI` di repo ini karena memasang proteksi bukan tindakan Devan — yang bisa diukur di sini hanya sisi Actions-nya, dan itu sudah diukur (§4.7: keempat job `skipped`, `steps: 0`).
+
+Konsekuensi yang mengikat siapa pun yang menyunting `ci.yml` nanti:
+
+- **Jangan pernah menambahkan `on.pull_request.paths` atau `paths-ignore` ke workflow ini** selama `lint`/`analyze`/`test` menjadi required check. Filter tingkat workflow mengubah skip dari "dilaporkan" menjadi "tidak dilaporkan", dan itu memblokir semua merge tanpa pesan yang menjelaskan. Penyaringan berdasarkan keberadaan berkas sudah ditangani di tingkat step (§3.3) justru untuk alasan ini.
+- Efek samping yang menguntungkan: menonaktifkan kembali `CI_ENABLED` (mis. saat repo sedang dibekukan) **tidak** mengunci PR — job menjadi `skipped` dan tetap dianggap sukses.
 
 `ASUMSI`: `required_approving_review_count: 1` hanya berguna bila ada peninjau kedua. Hari ini hanya `jettapindika` yang punya akses (`gh api repos/.../collaborators` → satu collaborator, `admin`), dan commit agent semuanya ber-author akun yang sama. Dengan satu identitas, GitHub tidak bisa membedakan penulis dari peninjau — lihat `06-register-celah.md` C-01. Yang memverifikasi: penambahan collaborator/machine user.
 
