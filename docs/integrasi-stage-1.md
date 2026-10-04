@@ -11,8 +11,10 @@ Dua pekerjaan yang disatukan:
 | #10 | EXTA-33 | Skema kasus, validator graf, loader data kasus | `962b958` |
 | #11 | EXTA-32 | Arsitektur, scaffold Rojo, kontrak data, modul gameplay | `327fe57` |
 
-Keduanya bercabang dari `main` (`5c5f59a`) dan sama-sama menambah `default.project.json`,
-`.luaurc`, `tests/run.luau`, dan `data/cases/gallery_01.json` — jadi integrasinya
+Keduanya bercabang dari `main` (`5c5f59a`) dan sama-sama menyentuh enam berkas
+yang sama (`.gitignore`, `.luaurc`, `README.md`, `data/cases/gallery_01.json`,
+`docs/prd-v0.2.md`, `tests/run.luau`); tiga di antaranya dengan isi yang berbeda
+(`.luaurc`, `data/cases/gallery_01.json`, `tests/run.luau`). Jadi integrasinya
 bukan penggabungan dua himpunan berkas yang lepas, melainkan penyatuan dua
 definisi atas berkas yang sama.
 
@@ -22,11 +24,26 @@ Branch integrasi `exta54-integrasi` dibuat dari head PR #10 (`962b958`), lalu
 head PR #11 (`327fe57`) di-*cherry-pick* di atasnya.
 
 Alasannya: PR #11 bercabang dari `main`, bukan dari PR #10, jadi `git merge`
-akan menghasilkan satu commit merge yang sulit dibaca dan tetap menyisakan
-konflik yang sama. Cherry-pick menghasilkan riwayat linier — `main` → PR #10 →
-integrasi PR #11 — dan satu commit integrasi yang bisa di-PR-kan sebagai satu
-unit. Setelah commit integrasi itu ada, PR #10 dan PR #11 tinggal di-*merge*
-dengan `--merge` biasa.
+akan menghasilkan konflik yang sama dan tidak ada yang lebih mudah dibaca.
+Cherry-pick menghasilkan riwayat linier — `main` → PR #10 → integrasi PR #11 —
+dan satu commit integrasi yang bisa di-PR-kan sebagai satu unit.
+
+Urutan pendaratan ke `main`:
+
+| # | Aksi | Hasil di `main` |
+|---|---|---|
+| 1 | PR #10 di-*merge* lewat GitHub | merge commit `59e0ff7` |
+| 2 | PR #14 (`exta54-integrasi`, judul memuat EXTA-54) di-*merge* lewat GitHub | merge commit `d932dc0` |
+| 3 | PR #11 direkam sebagai leluhur lewat merge commit `01783b6` (strategi `ours`) | pohon tidak berubah |
+
+Langkah 3 perlu dijelaskan. Setelah langkah 2, seluruh isi PR #11 sudah ada di
+`main` — hasil cherry-pick di langkah 2 adalah superset-nya. Menggabungkan PR
+#11 sebagai merge biasa karena itu akan membenturkan sepuluh berkas dan
+meminta penyelesaian yang mengembalikan pohon ke keadaan yang sudah ada:
+pekerjaan yang sama, dikerjakan dua kali. Merge commit `01783b6` memakai
+strategi `ours` untuk merekam `327fe57` sebagai parent kedua tanpa menyentuh
+pohon, dan itu dibuktikan: `git diff d932dc0 01783b6` kosong. Setelah itu
+GitHub menandai PR #11 `MERGED`.
 
 Cherry-pick PR #11 menyentuh 40 berkas: 37 masuk bersih, 3 bentrok (`add/add`).
 Ketiganya diselesaikan sadar, bukan dengan `--skip`:
@@ -36,6 +53,10 @@ Ketiganya diselesaikan sadar, bukan dengan `--skip`:
 | `.luaurc` | Dua definisi setelan Luau | **Versi PR #11** — superset: `languageMode: "strict"` + blok `lint` + 18 global Roblox |
 | `data/cases/gallery_01.json` | Dua bentuk data kasus | **Basis PR #10** (kanonik, lolos validator) **+ field yang dikonsumsi scaffold PR #11** |
 | `tests/run.luau` | Dua runner uji | **Kerangka PR #11** (harness bersama) + 6 blok uji EXTA-33 dipindah ke spec baru |
+
+Tidak ada berkas dari salah satu PR yang hilang. Dibuktikan dengan
+`git diff --name-status 962b958 01783b6 --diff-filter=D` dan
+`git diff --name-status 327fe57 01783b6 --diff-filter=D` — keduanya kosong.
 
 ## 2. `gallery_01.json`: satu kasus, dua konsumen
 
@@ -183,7 +204,9 @@ mungkin pada field baru ini memang tertangkap, bukan lewat begitu saja.
 
 ## 6. Perintah verifikasi dan hasilnya
 
-Semua dijalankan dari akar repo, di atas commit integrasi.
+Semua dijalankan dari akar repo. Pertama di atas commit integrasi, lalu
+**diulang di `main`** setelah PR #10, #14, dan #11 mendarat (`01783b6`) dengan
+hasil identik — angka di bawah adalah angka di `main`.
 
 ```sh
 lune run tests/run.luau     # EXIT=0
@@ -236,6 +259,28 @@ adalah `Script` dengan 8 ModuleScript anak, `ServerStorage.Cases` berisi
 
 Validator atas kasus gabungan: `status: LULUS`, `errors: 0`, `warnings: 0`.
 
+Seluruh perintah di atas dijalankan ulang di `main` setelah ketiga PR mendarat
+(`01783b6`), dengan hasil yang sama: `358 assertion, 0 gagal`, `EXIT=0` untuk
+seluruh baris. Pemeriksaan tipe:
+
+```sh
+luau-analyze --mode=strict \
+  src/shared/Config.luau src/shared/Roles.luau src/shared/Net.luau \
+  src/shared/PingPhrases.luau src/server/RoleAssignment.luau \
+  src/server/Matchmaking.luau src/server/AccusationService.luau \
+  src/server/DeductionEngine.luau src/server/ClueGraph.luau \
+  src/server/TelemetryService.luau src/server/NPCController.luau \
+  src/shared/case/CaseGraph.luau src/shared/case/CaseValidator.luau
+# EXIT=0, 0 diagnostik
+```
+
+Daftar 13 berkas itu sama dengan yang ada di `README.md`. Dua modul lagi di
+`src/shared/case/` juga lulus `--mode=strict`: `CaseLoader.luau` (15 modul
+seluruhnya), dan `Compat.luau` — yang lulus karena ditandai `--!nocheck`, bukan
+karena tipenya benar. `Compat` memanggil `require` dinamis (`require("./" .. name)`
+atau `require(script.Parent[name])`), dan `luau-analyze` tidak bisa memverifikasi
+itu. Karena itu ia tidak dihitung sebagai modul yang diperiksa.
+
 ### Catatan `stylua`
 
 Commit integrasi ikut merapikan berkas PR #10 dengan `stylua.toml` milik PR #11
@@ -254,7 +299,7 @@ menghasilkan keluaran yang sama sebelum dan sesudah.
 | # | Utang | Risiko | Kapan |
 |---|---|---|---|
 | 1 | **Dua `CaseLoader` koeksis** | `src/shared/case/CaseLoader.luau` (murni, dipakai CLI + `projectForRole`) dan `src/server/CaseLoader.luau` (menyentuh `Instance`, dipakai server) punya nama sama dan tanggung jawab yang tumpang tindih. Pembaca baru bisa salah `require`, dan logika pemilihan varian hidup di dua tempat (`selectVariant` vs `pickVariant`). | Sebelum minggu 2, saat loader dipanggil dari loop permainan |
-| 2 | `luau-lsp` + `sourcemap.json` belum ada | `init.server.luau`, `init.client.luau`, `NetClient`, `Hud/*` tidak bisa diperiksa tipe oleh `luau-analyze` mandiri (tidak punya definisi API Roblox). 13 modul murni sudah bersih di bawah `--mode=strict`. | EXTA-34 |
+| 2 | `luau-lsp` + `sourcemap.json` belum ada | `init.server.luau`, `init.client.luau`, `NetClient`, `Hud/*` tidak bisa diperiksa tipe oleh `luau-analyze` mandiri (tidak punya definisi API Roblox). 14 modul murni sudah bersih di bawah `--mode=strict` (13 di `README.md` + `src/shared/case/CaseLoader.luau`). | EXTA-34 |
 | 3 | Tidak ada rate limiting remote | Client bisa spam `Report`/`SubmitDeduction` | Sebelum rilis |
 | 4 | Belum ada CI | Tidak ada yang menjalankan suite ini otomatis. `tools/validate_case.luau` sudah `exit 1` saat gagal, jadi ia siap jadi gate. | EXTA-34 |
 | 5 | Telemetri dihitung tapi tidak dikirim | PRD §12 tidak bisa diukur | EXTA-34 |
