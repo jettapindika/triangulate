@@ -12,7 +12,9 @@ yang ditegakkan validator, dan cara server memuatnya tanpa membocorkan solusi ke
 | `src/shared/case/CaseValidator.luau` | **Otoritas eksekutabel.** Menegakkan aturan lintas-field yang tidak bisa diungkapkan JSON Schema. |
 | `src/shared/case/CaseLoader.luau` | Memuat kasus, memilih varian dari seed, memproyeksikan payload per role. |
 | `tools/validate_case.luau` | Harness CLI untuk penulis kasus. |
-| `tests/run.luau` | Uji regresi validator, loader, dan kebocoran solusi. |
+| `tests/run.luau` | Runner tunggal seluruh suite. |
+| `tests/case-schema.spec.luau` | Uji regresi validator, loader, dan proyeksi per role. |
+| `tests/leak-sweep.spec.luau` | Uji kebocoran seluruh pasangan view x role pada payload nyata. |
 | `tests/fixtures/*.json` | Kasus rusak yang sengaja disimpan sebagai bukti perilaku validator. |
 
 JSON Schema memvalidasi **bentuk**; validator Luau memvalidasi **arti**. Keduanya dipakai:
@@ -27,10 +29,22 @@ editor memberi umpan balik cepat dari skema, server menolak kasus cacat lewat va
   "case_type": "standard",        // standard | daily | case0  -> N = 4 | 3 | 2
   "key_deductions": 4,            // N pembuka form tuduhan (PRD §5)
   "location": "gallery",
+  "suspects": ["curator", "guard", "collector"],   // kandidat Pelaku untuk form tuduhan (PRD §5)
+  "motives": ["debt", "revenge", "greed"],         // kandidat Motif
+  "methods": ["access_card", "alarm_off", "forged_log"],  // kandidat Cara; harus memuat setiap variants[].method
   "variants": [
     { "variant_id": "v_curator", "culprit": "curator", "motive": "debt", "method": "access_card" }
   ],
   "briefing": { "searcher": "...", "handler": "...", "director": "..." },
+  "briefings": {
+    "Searcher": { "case_id": "gallery_01", "location": "gallery", "objective": "...",
+                  "knowns": ["..."], "unknowns": ["..."], "target": "obj_schedule" },
+    "Handler":  { "case_id": "gallery_01", "location": "gallery", "objective": "...",
+                  "knowns": ["..."], "unknowns": ["..."] },
+    "Director": { "case_id": "gallery_01", "location": "gallery", "objective": "...",
+                  "knowns": ["..."], "unknowns": ["..."],
+                  "statements": [{ "who": "collector", "text": "..." }] }
+  },
   "nodes": [
     { "id": "obj_schedule", "type": "object",    "gives_key": "key_a" },
     { "id": "ev_schedule",  "type": "evidence",  "puzzle": "torn_doc", "needs": ["key_a"], "yields": "clue_schedule" },
@@ -61,6 +75,16 @@ editor memberi umpan balik cepat dari skema, server menolak kasus cacat lewat va
 
 ### Field opsional yang menentukan perilaku
 
+- **`briefings` vs `briefing`** — dua field berbeda, keduanya wajib. `briefing` (huruf kecil) adalah
+  teks prosa per role yang divalidasi `CaseValidator`; `briefings` (huruf besar) adalah Role Card
+  terstruktur (PRD §9) yang diproyeksikan `Net.forRole` view `briefing`. Kunci `briefings` memakai
+  huruf besar (`Searcher`/`Handler`/`Director`) supaya cocok dengan allowlist per role di
+  `Net.CLIENT_VIEWS.briefing`. Karena `Net.project` menyalin nilai apa adanya, `briefings` **wajib
+  sudah bersih**: `briefings.Director.statements` hanya boleh memuat `who` dan `text`, bukan
+  `lie`/`contradicted_by`.
+- **`suspects`/`motives`/`methods`** — ruang pilihan form tuduhan (PRD §5). Ini kandidat, bukan
+  jawaban: solusinya tetap hanya di `solution` di sisi server. `methods` harus memuat setiap nilai
+  `variants[].method`, kalau tidak Director tidak bisa menulis jawaban yang benar.
 - **`node.variants`** — node hanya aktif di varian tersebut. Tanpa field ini, node aktif di semua
   varian. Inilah cara cabang solusi berbagi sebagian aset tapi tidak seluruhnya.
 - **`node.unlocks`** — node yang terbuka setelah deduksi selesai. Diperlakukan sebagai **tepi

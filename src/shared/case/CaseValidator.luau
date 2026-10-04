@@ -137,7 +137,10 @@ function CaseValidator.validate(case: any): Report
 					err(
 						"variant.duplicate_id",
 						path .. ".variant_id",
-						string.format("`variant_id` %q dipakai lebih dari sekali.", variant.variant_id)
+						string.format(
+							"`variant_id` %q dipakai lebih dari sekali.",
+							variant.variant_id
+						)
 					)
 				else
 					variantSeen[variant.variant_id] = true
@@ -184,7 +187,11 @@ function CaseValidator.validate(case: any): Report
 					err("node.id", path .. ".id", "`id` node wajib diisi.")
 					structural = false
 				elseif nodeSeen[id] then
-					err("node.duplicate_id", path .. ".id", string.format("`id` node %q duplikat.", id))
+					err(
+						"node.duplicate_id",
+						path .. ".id",
+						string.format("`id` node %q duplikat.", id)
+					)
 					structural = false
 				else
 					nodeSeen[id] = true
@@ -205,12 +212,20 @@ function CaseValidator.validate(case: any): Report
 				end
 
 				if node.variants ~= nil and not isStringList(node.variants) then
-					err("node.variants", path .. ".variants", "`variants` node harus daftar id varian.")
+					err(
+						"node.variants",
+						path .. ".variants",
+						"`variants` node harus daftar id varian."
+					)
 				end
 
 				if node.type == "object" then
 					if not isNonEmptyString(node.gives_key) then
-						err("node.object.gives_key", path .. ".gives_key", "Node object wajib punya `gives_key`.")
+						err(
+							"node.object.gives_key",
+							path .. ".gives_key",
+							"Node object wajib punya `gives_key`."
+						)
 						structural = false
 					end
 				elseif node.type == "evidence" then
@@ -226,16 +241,28 @@ function CaseValidator.validate(case: any): Report
 						structural = false
 					end
 					if node.needs ~= nil and not isStringList(node.needs) then
-						err("node.evidence.needs", path .. ".needs", "`needs` bukti harus daftar id kunci.")
+						err(
+							"node.evidence.needs",
+							path .. ".needs",
+							"`needs` bukti harus daftar id kunci."
+						)
 						structural = false
 					end
 					if not isNonEmptyString(node.yields) then
-						err("node.evidence.yields", path .. ".yields", "Node evidence wajib punya `yields`.")
+						err(
+							"node.evidence.yields",
+							path .. ".yields",
+							"Node evidence wajib punya `yields`."
+						)
 						structural = false
 					end
 				elseif node.type == "clue_card" then
 					if not isNonEmptyString(node.source) then
-						err("node.clue_card.source", path .. ".source", "Node clue_card wajib punya `source`.")
+						err(
+							"node.clue_card.source",
+							path .. ".source",
+							"Node clue_card wajib punya `source`."
+						)
 						structural = false
 					end
 				elseif node.type == "deduction" then
@@ -307,7 +334,11 @@ function CaseValidator.validate(case: any): Report
 					err(
 						"clue_card.source_type",
 						path .. ".source",
-						string.format("`source` %q bertipe %s, harus evidence.", node.source, source.type)
+						string.format(
+							"`source` %q bertipe %s, harus evidence.",
+							node.source,
+							source.type
+						)
 					)
 				elseif source.yields ~= node.id then
 					err(
@@ -366,7 +397,11 @@ function CaseValidator.validate(case: any): Report
 	local rawStatements: any = case.statements
 	if rawStatements ~= nil then
 		if type(rawStatements) ~= "table" or #rawStatements == 0 then
-			err("case.statements", "statements", "`statements` harus berisi minimal satu pernyataan.")
+			err(
+				"case.statements",
+				"statements",
+				"`statements` harus berisi minimal satu pernyataan."
+			)
 		else
 			for i, raw in ipairs(rawStatements) do
 				local statement: any = raw
@@ -386,7 +421,11 @@ function CaseValidator.validate(case: any): Report
 					end
 					if statement.variants ~= nil then
 						if not isStringList(statement.variants) then
-							err("statement.variants", path .. ".variants", "`variants` harus daftar id varian.")
+							err(
+								"statement.variants",
+								path .. ".variants",
+								"`variants` harus daftar id varian."
+							)
 						else
 							for j, svid in ipairs(statement.variants) do
 								if not variantSeen[svid] then
@@ -412,13 +451,19 @@ function CaseValidator.validate(case: any): Report
 								err(
 									"statement.contradicted_by_unknown",
 									path .. ".contradicted_by",
-									string.format("Clue Card %q tidak ada.", statement.contradicted_by)
+									string.format(
+										"Clue Card %q tidak ada.",
+										statement.contradicted_by
+									)
 								)
 							elseif clue.type ~= "clue_card" then
 								err(
 									"statement.contradicted_by_type",
 									path .. ".contradicted_by",
-									string.format("`contradicted_by` harus clue_card, bukan %s.", clue.type)
+									string.format(
+										"`contradicted_by` harus clue_card, bukan %s.",
+										clue.type
+									)
 								)
 							end
 						end
@@ -433,7 +478,11 @@ function CaseValidator.validate(case: any): Report
 	--[[ F. Briefing per role (PRD §9) -------------------------------------- ]]
 
 	if case.briefing == nil then
-		err("case.briefing", "briefing", "`briefing` wajib ada untuk searcher, handler, dan director.")
+		err(
+			"case.briefing",
+			"briefing",
+			"`briefing` wajib ada untuk searcher, handler, dan director."
+		)
 	elseif type(case.briefing) ~= "table" then
 		err("case.briefing_type", "briefing", "`briefing` harus object berisi kunci per role.")
 	else
@@ -456,14 +505,14 @@ function CaseValidator.validate(case: any): Report
 		local keyDeductions = case.key_deductions
 
 		if keyDeductions ~= nil and keyDeductions < 1 then
-			err(
-				"gate.key_deductions",
-				"key_deductions",
-				"`key_deductions` harus minimal 1."
-			)
+			err("gate.key_deductions", "key_deductions", "`key_deductions` harus minimal 1.")
 		end
 
-		if case.case_type ~= nil and CASE_TYPES[case.case_type] == true and keyDeductions ~= nil then
+		if
+			case.case_type ~= nil
+			and CASE_TYPES[case.case_type] == true
+			and keyDeductions ~= nil
+		then
 			local expected = CaseGraph.REQUIRED_KEY_DEDUCTIONS[case.case_type]
 			if keyDeductions ~= expected then
 				err(
@@ -532,7 +581,11 @@ function CaseValidator.validate(case: any): Report
 			-- G4. Setiap field tuduhan ditopang minimal satu deduksi.
 			local supported: { [string]: number } = {}
 			for _, node in ipairs(active) do
-				if node.type == "deduction" and reachable[node.id] == true and type(node.supports) == "table" then
+				if
+					node.type == "deduction"
+					and reachable[node.id] == true
+					and type(node.supports) == "table"
+				then
 					for _, field in ipairs(node.supports) do
 						supported[field] = (supported[field] or 0) + 1
 					end
@@ -563,7 +616,11 @@ function CaseValidator.validate(case: any): Report
 						variantLiars = variantLiars + 1
 						if isNonEmptyString(statement.contradicted_by) then
 							local clue = nodeById[statement.contradicted_by]
-							if clue ~= nil and CaseGraph.isActive(clue, vid) and reachable[clue.id] == true then
+							if
+								clue ~= nil
+								and CaseGraph.isActive(clue, vid)
+								and reachable[clue.id] == true
+							then
 								markable = markable + 1
 							end
 						end
@@ -633,7 +690,11 @@ function CaseValidator.validate(case: any): Report
 							err(
 								"solution.deduction_type",
 								rpath,
-								string.format("Deduksi kunci %q bertipe %s, bukan deduction.", id, node.type)
+								string.format(
+									"Deduksi kunci %q bertipe %s, bukan deduction.",
+									id,
+									node.type
+								)
 							)
 						elseif not CaseGraph.isActive(node, vid) then
 							err(
@@ -645,7 +706,11 @@ function CaseValidator.validate(case: any): Report
 							err(
 								"solution.deduction_unreachable",
 								rpath,
-								string.format("Deduksi kunci %q tidak tercapai di varian %s.", id, vid)
+								string.format(
+									"Deduksi kunci %q tidak tercapai di varian %s.",
+									id,
+									vid
+								)
 							)
 						else
 							if type(node.supports) == "table" then
@@ -761,6 +826,28 @@ function CaseValidator.formatReport(report: Report): string
 		table.insert(lines, string.format("  [%s] %s: %s", issue.code, issue.path, issue.message))
 	end
 	return table.concat(lines, "\n")
+end
+
+--[[
+	Adapter untuk seam `CaseLoader.setValidator` di `src/server/CaseLoader.luau`.
+
+	EXTA-32 mendeklarasikan kontrak `fn(caseTable) -> (ok, daftarMasalah)` dan
+	menyisakan pengisinya untuk EXTA-33. EXTA-33 menyediakan `validate`, yang
+	mengembalikan `Report`; fungsi inilah yang menjembatani keduanya, sehingga
+	jalur validasi yang dipakai server saat start adalah jalur yang sama persis
+	dengan yang diuji dari CLI.
+]]
+function CaseValidator.asLoaderValidator(case: any): (boolean, { string })
+	local report = CaseValidator.validate(case)
+	if report.ok then
+		return true, {}
+	end
+
+	local problems: { string } = {}
+	for _, issue in ipairs(report.errors) do
+		table.insert(problems, string.format("[%s] %s: %s", issue.code, issue.path, issue.message))
+	end
+	return false, problems
 end
 
 return CaseValidator

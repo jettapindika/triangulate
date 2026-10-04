@@ -1,0 +1,8 @@
+std = "roblox"
+
+exclude = ["build/**", ".rojo/**"]
+
+[lints]
+shadowing = "allow"
+multiple_statements = "deny"
+unused_variable = "warn"

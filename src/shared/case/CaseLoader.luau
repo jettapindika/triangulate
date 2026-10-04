@@ -121,7 +121,11 @@ function CaseLoader.load(case: any, seed: any): any
 			report = {
 				ok = false,
 				errors = {
-					{ code = "loader.no_variant", path = "variants", message = "Kasus tidak punya varian." },
+					{
+						code = "loader.no_variant",
+						path = "variants",
+						message = "Kasus tidak punya varian.",
+					},
 				},
 				warnings = {},
 			},

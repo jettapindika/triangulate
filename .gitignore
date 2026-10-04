@@ -6,3 +6,6 @@ build/
 .rojo/
 *.lock
 .DS_Store
+
+# Dihasilkan `rojo sourcemap`. Konsumennya luau-lsp; tidak perlu masuk repo.
+sourcemap.json
