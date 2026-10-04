@@ -89,7 +89,7 @@ Alternatif bila nama final berbeda (PRD §19 masih membuka keputusan nama):
 >
 > Menyelesaikan puzzle saja tidak cukup. Kalian harus menyusun deduksi, menemukan kontradiksi dalam pernyataan saksi, lalu menuduh pelaku, motif, dan cara dengan benar. Tiga percobaan per kasus, jadi bicarakan dulu sebelum menuduh.
 >
-> Bisa main 3 pemain, 2 pemain dengan NPC Archivist, atau solo sebagai Director. Kasus baru rilis tiap 1-2 minggu dengan cabang solusi berbeda, jadi tidak ada yang tahu pasti siapa pelakunya.
+> Bisa main 3 pemain, 2 pemain dengan NPC Archivist, atau solo sebagai Director. Tiap kasus punya cabang solusi berbeda, jadi tidak ada yang tahu pasti siapa pelakunya.
 >
 > Tanpa pay-to-win: solusi dan hint tidak bisa dibeli.
 
