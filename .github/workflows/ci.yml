@@ -217,9 +217,9 @@ jobs:
           echo "::warning title=luau-lsp analyze::luau-lsp menemukan galat tipe di src/. Lihat log langkah 'Analisis tipe — luau-lsp'. Langkah ini belum memblokir merge (docs/ci/03-pipeline-ci.md §3.5)."
 
   # ---------------------------------------------------------------------------
-  # test — runner uji Luau berbasis lune. Jalur masuk yang diharapkan:
-  # tests/run.luau. Berkas itu belum ada; job ini menyiapkan cara menjalankannya,
-  # bukan mengarang uji.
+  # test — runner uji Luau berbasis lune. Jalur masuk: tests/run.luau (milik
+  # EXTA-32/EXTA-33, sudah ada di main). Guard `hashFiles` dipertahankan supaya
+  # job ini tidak merah pada pohon yang belum punya runner.
   # ---------------------------------------------------------------------------
   test:
     name: test
@@ -266,9 +266,14 @@ jobs:
         run: lune run tests/run.luau
 
   # ---------------------------------------------------------------------------
-  # validate-case — validator skema kasus milik EXTA-33 (Nathan — CTO/CIO),
-  # calon lokasi tools/validate-case.luau. Tidak dijalankan selama berkas itu
-  # belum ada. Job ini TIDAK memuat validator tersebut.
+  # validate-case — menjalankan validator skema kasus `tools/validate_case.luau`
+  # (milik EXTA-33) atas seluruh berkas di data/cases/. Job ini TIDAK memuat
+  # salinan validatornya; ia memanggil berkas yang ada di repo.
+  #
+  # HANYA data/cases/*.json yang divalidasi. tests/fixtures/ SENGAJA tidak ikut:
+  # cycle.json, dead_end.json, dan key_deductions_too_high.json adalah kasus
+  # NEGATIF yang memang harus ditolak validator, jadi memasukkannya akan membuat
+  # job ini merah karena desain, bukan karena regresi.
   # ---------------------------------------------------------------------------
   validate-case:
     name: validate-case
@@ -307,9 +312,17 @@ jobs:
         run: echo "$RUNNER_TEMP/luau-tools/bin" >> "$GITHUB_PATH"
 
       - name: Lewati validasi kasus — validator belum ada
-        if: hashFiles('tools/validate-case.luau') == ''
-        run: echo "::notice::tools/validate-case.luau belum ada (milik EXTA-33). Job validate-case tidak memvalidasi apa pun."
+        if: hashFiles('tools/validate_case.luau') == ''
+        run: echo "::notice::tools/validate_case.luau belum ada. Job validate-case tidak memvalidasi apa pun."
 
       - name: Validasi berkas kasus — lune
-        if: hashFiles('tools/validate-case.luau') != ''
-        run: lune run tools/validate-case.luau
+        if: hashFiles('tools/validate_case.luau') != ''
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(data/cases/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::notice::Tidak ada data/cases/*.json untuk divalidasi."
+            exit 0
+          fi
+          lune run tools/validate_case.luau -- "${files[@]}"
