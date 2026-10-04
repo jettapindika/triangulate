@@ -33,6 +33,8 @@ export type Bound = {
 	PlacePiece: RemoteEvent,
 	MarkContradiction: RemoteEvent,
 	Inspect: RemoteEvent,
+	ContradictionResult: RemoteEvent,
+	TablePreview: RemoteEvent,
 }
 
 -- Menunggu seluruh remote muncul. Dipanggil sekali di awal; kalau salah satu
@@ -66,6 +68,8 @@ function NetClient.bind(shared: Instance): Bound
 		PlacePiece = waitFor("PlacePiece"),
 		MarkContradiction = waitFor("MarkContradiction"),
 		Inspect = waitFor("Inspect"),
+		ContradictionResult = waitFor("ContradictionResult"),
+		TablePreview = waitFor("TablePreview"),
 	}
 end
 
@@ -140,11 +144,18 @@ end
 
 -- PRD §4: Director menandai Kontradiksi antara pernyataan saksi dan bukti.
 --
--- Yang dikirim hanya dua ID. Client tidak pernah tahu mana penandaan yang
--- benar: server mengembalikan boolean-nya ke dirinya sendiri, dan client
--- hanya melihat `contradictions_marked` bertambah di `session_state`.
-function NetClient.markContradiction(bound: Bound, statementId: string, clueId: string): ()
-	bound.MarkContradiction:FireServer({ statement_id = statementId, clue_id = clueId })
+-- Yang dikirim HANYA id pernyataan. Clue Card pembantahnya tidak ikut: di data
+-- kasus satu pernyataan hanya punya satu `contradicted_by`, jadi id pernyataan
+-- sudah menentukan buktinya secara tunggal, dan mengirim id kedua hanya
+-- memberi client kanal untuk menebak id Clue Card yang belum dimilikinya.
+-- Server yang membaca `contradicted_by` dan memeriksa buktinya sudah
+-- dikumpulkan.
+--
+-- Client tidak pernah tahu mana penandaan yang benar: server mengembalikan
+-- boolean-nya ke dirinya sendiri, dan client hanya melihat
+-- `contradictions_marked` bertambah di `session_state`.
+function NetClient.markContradiction(bound: Bound, statementId: string): ()
+	bound.MarkContradiction:FireServer({ statement_id = statementId })
 end
 
 return NetClient

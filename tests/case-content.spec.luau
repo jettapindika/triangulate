@@ -147,14 +147,14 @@ Harness.ok(
 
 -- Proyeksi Director tidak pernah membawa penanda bohong maupun pembantahnya.
 local directorPayload = CaseLoader.projectForRole(case, "v_rani", "Director")
-Harness.equal(
-	#Net.findSecrets(directorPayload),
-	0,
-	"proyeksi Director bersih dari field rahasia"
-)
+Harness.equal(#Net.findSecrets(directorPayload), 0, "proyeksi Director bersih dari field rahasia")
 for _, statement in ipairs(directorPayload.statements) do
 	Harness.equal(statement.lie, nil, "pernyataan yang dikirim tidak punya penanda `lie`")
-	Harness.equal(statement.contradicted_by, nil, "pernyataan yang dikirim tidak punya `contradicted_by`")
+	Harness.equal(
+		statement.contradicted_by,
+		nil,
+		"pernyataan yang dikirim tidak punya `contradicted_by`"
+	)
 end
 
 -- Searcher dan Handler tidak menerima pernyataan sama sekali.
@@ -184,10 +184,22 @@ Harness.equal(
 
 local displaySearcher = CaseLoader.projectForRole(case, "v_rani", "Searcher")
 Harness.check(displaySearcher ~= nil, "proyeksi Searcher dengan ejaan tampilan ada")
-Harness.equal(displaySearcher.briefing, searcherPayload.briefing, "briefing Searcher ejaan tampilan")
+Harness.equal(
+	displaySearcher.briefing,
+	searcherPayload.briefing,
+	"briefing Searcher ejaan tampilan"
+)
 
-Harness.equal(CaseLoader.projectForRole(case, "v_rani", "Kurator"), nil, "role tak dikenal tetap nil")
-Harness.equal(CaseLoader.projectForRole(case, "v_rani", 42 :: any), nil, "role bukan string tetap nil")
+Harness.equal(
+	CaseLoader.projectForRole(case, "v_rani", "Kurator"),
+	nil,
+	"role tak dikenal tetap nil"
+)
+Harness.equal(
+	CaseLoader.projectForRole(case, "v_rani", 42 :: any),
+	nil,
+	"role bukan string tetap nil"
+)
 
 Harness.suite("Konten kasus: node aktif mengikuti varian")
 
@@ -227,7 +239,10 @@ for _, variantId in { "v_rani", "v_bowo" } do
 	local covered: { [string]: boolean } = {}
 	for _, deductionId in ipairs(entry.required_deductions) do
 		local node = CaseGraph.nodeIndex(case)[deductionId]
-		Harness.check(node ~= nil, string.format("%s: deduksi kunci '%s' ada", variantId, deductionId))
+		Harness.check(
+			node ~= nil,
+			string.format("%s: deduksi kunci '%s' ada", variantId, deductionId)
+		)
 		if node ~= nil then
 			for _, field in ipairs(node.supports) do
 				covered[field] = true

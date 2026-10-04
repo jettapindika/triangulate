@@ -57,7 +57,11 @@ Harness.equal(select(2, PuzzleTable.gridFor("cipher")), 3, "cipher 3 baris")
 local cols, rows = PuzzleTable.gridFor("teka_teki")
 Harness.equal(cols, nil, "tipe tak dikenal tidak punya kolom")
 Harness.equal(rows, nil, "tipe tak dikenal tidak punya baris")
-Harness.equal(PuzzleTable.forPuzzle("teka_teki", "p", 16, 16, rng()), nil, "meja tipe tak dikenal nil")
+Harness.equal(
+	PuzzleTable.forPuzzle("teka_teki", "p", 16, 16, rng()),
+	nil,
+	"meja tipe tak dikenal nil"
+)
 
 Harness.suite("PuzzleTable: grid tidak persegi (timeline)")
 
@@ -113,14 +117,22 @@ for _, expect in EXPECTED do
 	local entry = PuzzleTableService.get(service, expect.node_id)
 	assert(entry ~= nil, expect.node_id .. " harus punya meja")
 
-	Harness.equal(entry.puzzle_type, expect.puzzle_type, expect.node_id .. ": tipe dibaca dari data")
+	Harness.equal(
+		entry.puzzle_type,
+		expect.puzzle_type,
+		expect.node_id .. ": tipe dibaca dari data"
+	)
 	Harness.equal(
 		#entry.state.pieces,
 		expect.pieces,
 		string.format("%s: %d potongan", expect.node_id, expect.pieces)
 	)
 	Harness.check(not entry.solved, expect.node_id .. " belum selesai saat sesi dimulai")
-	Harness.equal(PuzzleTableService.progress(service, expect.node_id), 0, expect.node_id .. ": progres 0")
+	Harness.equal(
+		PuzzleTableService.progress(service, expect.node_id),
+		0,
+		expect.node_id .. ": progres 0"
+	)
 
 	local accepted = 0
 	for _, piece in entry.state.pieces do
@@ -178,8 +190,16 @@ for _, expect in EXPECTED do
 		0,
 		expect.node_id .. ": puzzle_state bersih"
 	)
-	Harness.equal(payload.cols, select(1, PuzzleTable.gridFor(expect.puzzle_type)), expect.node_id .. ": cols di payload")
-	Harness.equal(payload.rows, select(2, PuzzleTable.gridFor(expect.puzzle_type)), expect.node_id .. ": rows di payload")
+	Harness.equal(
+		payload.cols,
+		select(1, PuzzleTable.gridFor(expect.puzzle_type)),
+		expect.node_id .. ": cols di payload"
+	)
+	Harness.equal(
+		payload.rows,
+		select(2, PuzzleTable.gridFor(expect.puzzle_type)),
+		expect.node_id .. ": rows di payload"
+	)
 
 	for _, piece in payload.pieces do
 		Harness.check(piece.target == nil, expect.node_id .. ": payload tanpa `target`")

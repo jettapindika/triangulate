@@ -124,7 +124,8 @@ local function openCase(variantId: string, now: number): Case
 				current.gate,
 				AccusationGate.statementId(index),
 				statement,
-				statement.contradicted_by
+				statement.contradicted_by,
+				{ [statement.contradicted_by] = true }
 			)
 			break
 		end
@@ -276,12 +277,16 @@ Harness.check(
 	"gerbang tetap tertutup tanpa satu pun Kontradiksi"
 )
 
--- Penandaan yang salah tidak membuka gerbang.
+-- Penandaan dengan bukti yang keliru ditolak. Client tidak lagi mengirim id
+-- bukti -- server yang membacanya dari data kasus -- tapi gerbang tetap harus
+-- menolak pasangan yang tidak cocok: itu penjaga terakhir bila kelak ada jalur
+-- lain yang memanggilnya.
 local wrongMark = AccusationGate.markContradiction(
 	noContradiction.gate,
 	"stmt_1",
 	gallery.statements[1],
-	"clue_salah"
+	"clue_salah",
+	{ clue_salah = true }
 )
 Harness.check(not wrongMark, "kontradiksi dengan bukti yang keliru ditolak")
 Harness.equal(
@@ -294,12 +299,32 @@ Harness.check(
 	"gerbang masih tertutup setelah penandaan keliru"
 )
 
+-- PRD §4: Kontradiksi adalah hasil kerja tim, bukan tebakan. Pernyataan yang
+-- memang dibantah bukti tetap ditolak selama bukti pembantahnya BELUM
+-- dikumpulkan; tanpa syarat itu Director bisa menandai semua pernyataan sejak
+-- detik pertama dan gerbang tuduhan (PRD §5) terbuka tanpa satu pun deduksi.
+local liar = gallery.statements[1]
+local tooEarly, tooEarlyCorrect =
+	AccusationGate.markContradiction(noContradiction.gate, "stmt_1", liar, liar.contradicted_by, {})
+Harness.check(not tooEarly, "pembohong tanpa bukti pembantah ditolak")
+Harness.check(
+	not tooEarlyCorrect,
+	"penolakan itu bukan 'sudah ditandai' -- dua mode kegagalan berbeda pesannya"
+)
+Harness.equal(
+	noContradiction.gate.contradictionsMarked,
+	0,
+	"penandaan terlalu dini tidak menambah hitungan"
+)
+
 -- Penandaan yang benar membukanya, dan idempoten.
+local obtained: { [string]: boolean } = { [liar.contradicted_by] = true }
 local correctMark = AccusationGate.markContradiction(
 	noContradiction.gate,
 	"stmt_1",
-	gallery.statements[1],
-	gallery.statements[1].contradicted_by
+	liar,
+	liar.contradicted_by,
+	obtained
 )
 Harness.check(correctMark, "kontradiksi yang benar diterima")
 Harness.equal(noContradiction.gate.contradictionsMarked, 1, "hitungan Kontradiksi naik satu")
@@ -311,14 +336,46 @@ Harness.ok(
 local again = AccusationGate.markContradiction(
 	noContradiction.gate,
 	"stmt_1",
-	gallery.statements[1],
-	gallery.statements[1].contradicted_by
+	liar,
+	liar.contradicted_by,
+	obtained
 )
 Harness.check(not again, "penandaan ulang pernyataan yang sama tidak dihitung baru")
 Harness.equal(
 	noContradiction.gate.contradictionsMarked,
 	1,
 	"hitungan tidak bertambah oleh pengulangan"
+)
+
+--[[
+	Kontrak id pernyataan di kabel.
+
+	`handleMarkContradiction` menerima `stmt_<n>`, memetakan `n` kembali ke
+	indeks array `case.statements`, lalu membaca `contradicted_by` dari sana.
+	Rantai itu hanya benar kalau id yang dirakit `publicStatements` memang
+	indeks aslinya -- bukan nomor urut hasil penyaringan. Dua pernyataan di
+	`gallery_01.json` hanya berlaku di satu varian, jadi penyaringan memang
+	menggeser urutan; inilah yang membuat penggeseran itu tidak merusak
+	pemetaan balik.
+]]
+local stmtIds = AccusationGate.publicStatements(
+	gallery.statements,
+	function(statement: any): boolean
+		return CaseGraph.statementAppliesTo(statement, "v_curator")
+	end
+)
+local stmtIndexes: { number } = {}
+for _, entry in stmtIds do
+	table.insert(stmtIndexes, tonumber(string.match(entry.id, "^stmt_(%d+)$")) or -1)
+end
+Harness.equal(
+	table.concat(stmtIndexes, ","),
+	"1,3,4",
+	"id memakai indeks asli, bukan urutan tersaring"
+)
+Harness.check(
+	gallery.statements[stmtIndexes[1]].contradicted_by ~= nil,
+	"indeks pertama varian ini memang pembohongnya"
 )
 
 -- Deduksi cabang lain tidak boleh ikut terhitung: `keyDeductionsDone` adalah
