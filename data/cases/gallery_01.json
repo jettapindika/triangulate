@@ -1,0 +1,83 @@
+{
+  "case_id": "gallery_01",
+  "location": "gallery",
+  "title": "Lukisan yang Tertukar",
+  "suspects": ["curator", "guard", "collector"],
+  "motives": ["debt", "revenge", "greed"],
+  "methods": ["swapped_painting", "forged_log", "stolen_access_card"],
+  "variants": [
+    { "culprit": "curator", "motive": "debt", "method": "swapped_painting" },
+    { "culprit": "guard", "motive": "revenge", "method": "forged_log" }
+  ],
+  "briefings": {
+    "Searcher": {
+      "case_id": "gallery_01",
+      "location": "gallery",
+      "objective": "Cari benda dengan simbol bintang di ruang staf.",
+      "knowns": ["Ada jadwal satpam yang sobek", "Ada kartu akses di loker"],
+      "unknowns": ["Isi log akses", "Motif pelaku"],
+      "target": "obj_schedule"
+    },
+    "Handler": {
+      "case_id": "gallery_01",
+      "location": "gallery",
+      "objective": "Rekonstruksi sobekan jadwal dan pecahkan cipher log akses.",
+      "knowns": ["Meja punya dua slot bukti", "Cipher butuh kunci dari Searcher"],
+      "unknowns": ["Siapa pelakunya", "Apa motifnya"],
+      "target": "ev_schedule"
+    },
+    "Director": {
+      "case_id": "gallery_01",
+      "location": "gallery",
+      "objective": "Gabungkan Clue Card untuk membuka pinpoint, lalu tanda tangani tuduhan.",
+      "knowns": ["Ada tiga pernyataan saksi", "Minimal satu saksi berbohong"],
+      "unknowns": ["Saksi mana yang berbohong", "Cara pelaku masuk"]
+    }
+  },
+  "nodes": [
+    { "id": "obj_schedule", "type": "object", "gives_key": "key_a" },
+    { "id": "obj_access_card", "type": "object", "gives_key": "key_b" },
+    { "id": "obj_studio_photo", "type": "object", "gives_key": "key_c" },
+    {
+      "id": "ev_schedule",
+      "type": "evidence",
+      "puzzle": "torn_doc",
+      "needs": ["key_a"],
+      "yields": "clue_guard_off"
+    },
+    {
+      "id": "ev_access_log",
+      "type": "evidence",
+      "puzzle": "cipher",
+      "needs": ["key_b"],
+      "yields": "clue_card_log"
+    },
+    {
+      "id": "ev_photo_timeline",
+      "type": "evidence",
+      "puzzle": "timeline",
+      "needs": ["key_c"],
+      "yields": "clue_collector_knew"
+    },
+    { "id": "clue_guard_off", "type": "clue" },
+    { "id": "clue_card_log", "type": "clue" },
+    { "id": "clue_collector_knew", "type": "clue" },
+    {
+      "id": "ded_access",
+      "type": "deduction",
+      "needs": ["clue_guard_off", "clue_card_log"],
+      "unlocks": ["pin_office"]
+    },
+    {
+      "id": "ded_motive",
+      "type": "deduction",
+      "needs": ["clue_card_log", "clue_collector_knew"],
+      "unlocks": ["pin_studio"]
+    }
+  ],
+  "statements": [
+    { "who": "curator", "text": "Saya pulang sebelum jam 21.00.", "lie": true, "contradicted_by": "clue_card_log" },
+    { "who": "guard", "text": "Saya off duty jam 21.00.", "lie": false, "contradicted_by": "" },
+    { "who": "collector", "text": "Saya tidak pernah melihat lukisan itu.", "lie": false, "contradicted_by": "" }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "languageMode": "strict",
+  "lint": {
+    "*": true
+  },
+  "globals": [
+    "script",
+    "game",
+    "workspace",
+    "Instance",
+    "Enum",
+    "Vector2",
+    "Vector3",
+    "CFrame",
+    "Color3",
+    "UDim2",
+    "Rect",
+    "task",
+    "warn",
+    "tick",
+    "typeof",
+    "DateTime",
+    "Random",
+    "os"
+  ]
+}
