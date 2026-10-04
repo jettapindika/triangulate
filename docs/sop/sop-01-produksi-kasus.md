@@ -50,7 +50,7 @@ Satu langkah satu tindakan. Nomor `H+n` adalah hari kerja setelah slot dibuka; `
 
 Checklist pitch (semua wajib terisi; rujukan §4, §5, §10):
 
-- [ ] lokasi (satu lokasi; §16 MVP: 1 lokasi per kasus)
+- [ ] lokasi (satu nama lokasi untuk kasus ini; §16 MVP membatasi rilis awal ke 1 lokasi + mini-aksi)
 - [ ] 3 rantai bukti yang berjalan paralel (§6)
 - [ ] setiap rantai menopang tepat satu field tuduhan: Pelaku, Motif, Cara (§5)
 - [ ] 2-3 varian solusi dengan pelaku/motif berbeda, berbagi lokasi dan aset puzzle (§10)
