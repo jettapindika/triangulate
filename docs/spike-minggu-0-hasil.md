@@ -1,7 +1,14 @@
 # S0.1 — Hasil: resolusi sheet dan `ImageRectOffset`/`ImageRectSize`
 
 Status: **diukur sebagian**. Satu ambang lulus, satu terjawab sebagian, dua
-tidak bisa diukur di lingkungan ini (tanpa Roblox Studio, tanpa perangkat mobile).
+tidak bisa diukur di lingkungan ini (tanpa perangkat mobile, tanpa otomasi Studio).
+
+Roblox Studio memang terbuka di mesin ini, tetapi jalur otomasinya mati: MCP
+Studio menjawab `initialize` lalu mengembalikan `tools/list` kosong dengan
+`Timed out waiting for tools to become available` — ia butuh auth Assistant
+interaktif di UI Studio. Jadi tidak ada cara menjalankan pengukuran di dalam
+engine dari sini. Itu sebabnya angka di bawah berasal dari model gambar, bukan
+dari sampler Roblox.
 
 Skrip pengukuran: `/Users/mac/Documents/Roblox/.probe/s01_resolusi.py`
 (di luar repo, tidak masuk git). Artefak:
@@ -14,7 +21,7 @@ Dinyatakan lebih dulu supaya tidak terbaca sebagai lulus:
 
 | Yang diminta metode | Status |
 |---|---|
-| Uji di Android kelas bawah, kelas menengah, dan PC | **BELUM TERUKUR** — tidak ada perangkat, tidak ada Studio |
+| Uji di Android kelas bawah, kelas menengah, dan PC | **BELUM TERUKUR** — tidak ada perangkat; otomasi Studio mati |
 | Tangkapan layar Roblox nyata sebelum/sesudah | **BELUM TERUKUR** |
 | Kompresi texture Roblox yang sebenarnya | **BELUM TERUKUR** — PIL hanya meniru penurunan resolusi, bukan kompresi lossy Roblox |
 | `ResampleMode = Default`/`Pixelated` yang sebenarnya | **BELUM TERUKUR** — yang diukur peniru bilinear dan nearest PIL |
@@ -322,7 +329,7 @@ langsung lintas dokumen — hanya arah dan urutannya yang sebanding.
 ## 6. Yang perlu diukur berikutnya
 
 1. **Uji perangkat nyata** untuk ambang jank dan tangkapan layar sebelum/sesudah
-   (butuh Studio + Android kelas bawah + iPhone/Android menengah + PC).
+   (butuh otomasi Studio + Android kelas bawah + iPhone/Android menengah + PC).
 2. **Uji 10 penguji** untuk ambang kecocokan potongan.
 3. **Lebar gutter minimum** di sampler Roblox sebenarnya — model di sini
    menyarankan sekitar 6 px untuk penurunan 4×, tetapi itu keluaran bilinear PIL.
