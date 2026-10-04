@@ -31,6 +31,7 @@ require("./telemetry.spec")
 require("./case-loader.spec")
 require("./npc.spec")
 require("./puzzle-table.spec")
+require("./puzzle-table-service.spec")
 
 Harness.report()
 

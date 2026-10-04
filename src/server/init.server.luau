@@ -24,6 +24,7 @@ local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 local Roles = require(Shared.Roles)
 local CaseValidator = require(Shared.case.CaseValidator)
+local PuzzleTable = require(Shared.PuzzleTable)
 
 local CaseLoader = require(script.CaseLoader)
 local DeductionEngine = require(script.DeductionEngine)
@@ -32,6 +33,7 @@ local RoleAssignment = require(script.RoleAssignment)
 local Matchmaking = require(script.Matchmaking)
 local NPCController = require(script.NPCController)
 local TelemetryService = require(script.TelemetryService)
+local PuzzleTableService = require(script.PuzzleTableService)
 
 -- `NPCController` dipakai di `startSession` untuk menghitung role mana yang
 -- diisi NPC (PRD §8). Yang BELUM ada adalah loop yang menjalankan aksinya --
@@ -101,6 +103,10 @@ type Session = {
 	caseId: string,
 	case: CaseLoader.Case,
 	variant: CaseLoader.CaseVariant,
+	-- Id varian yang dipilih. `CaseVariant` tidak membawa `variant_id` (lihat
+	-- `CaseLoader.pickVariant`), jadi id-nya disimpan terpisah di sini: node
+	-- ber-`variants` disaring terhadap nilai ini.
+	variantId: string?,
 	roles: { [number]: string },
 	-- PRD §8: "Jika belum 3 manusia, role kosong diisi NPC." `roles` di atas
 	-- di-key oleh `UserId`, dan NPC tidak punya UserId -- jadi role yang tidak
@@ -111,6 +117,9 @@ type Session = {
 	npcRoles: { [string]: boolean },
 	engine: DeductionEngine.Engine,
 	completedDeductions: { [string]: boolean },
+	-- Meja puzzle sesi ini (PRD §4, §15, §17 minggu 1). Dibangun sekali saat
+	-- sesi mulai dari node bukti yang aktif pada varian yang dipilih.
+	puzzle: PuzzleTableService.Service,
 	accusation: AccusationService.Session,
 	telemetry: TelemetryService.Session,
 	startedAt: number,
@@ -180,7 +189,20 @@ local function startSession(): ()
 	-- PRD §10: "Seed server memilih cabang saat sesi dibuat."
 	-- Pemilihan ini terjadi di server dan hasilnya tidak pernah dikirim ke client.
 	local rng = Random.new(os.time())
-	local variant = CaseLoader.pickVariant(loaded, rng:NextNumber())
+	local roll = rng:NextNumber()
+	local variant = CaseLoader.pickVariant(loaded, roll)
+	-- `CaseVariant` tidak membawa `variant_id`, jadi indeksnya diambil dari
+	-- fungsi yang sama dengan `roll` yang sama. Node bukti ber-`variants`
+	-- (mis. `ev_ledger`) disaring terhadap id ini -- membiarkannya hidup akan
+	-- mengirim bukti milik cabang lain ke client.
+	local variantId: string? = nil
+	local rawVariants = (loaded :: any).variants
+	if type(rawVariants) == "table" then
+		local chosen = rawVariants[CaseLoader.pickVariantIndex(loaded, roll)]
+		if type(chosen) == "table" and type(chosen.variant_id) == "string" then
+			variantId = chosen.variant_id
+		end
+	end
 
 	local players = Players:GetPlayers()
 	local refs: { RoleAssignment.PlayerRef } = {}
@@ -280,10 +302,12 @@ local function startSession(): ()
 		caseId = caseId,
 		case = loaded,
 		variant = variant,
+		variantId = variantId,
 		roles = assigned,
 		npcRoles = npcRoles,
 		engine = engine,
 		completedDeductions = {},
+		puzzle = PuzzleTableService.new(PuzzleTable),
 		accusation = AccusationService.newSession(
 			solution,
 			Config.ACCUSATION_FIELDS,
@@ -292,6 +316,32 @@ local function startSession(): ()
 		telemetry = TelemetryService.newSession(os.clock()),
 		startedAt = os.clock(),
 	}
+
+	-- Meja puzzle sesi ini (PRD §4, §15). Node bukti yang hidup pada varian
+	-- yang dipilih menjadi meja; tipe puzzle yang belum dikenal DILEWATI, bukan
+	-- menggagalkan sesi -- satu node bertipe baru di data kasus tidak boleh
+	-- menjatuhkan sesi tiga pemain. Yang dilewati dicatat supaya ketahuan.
+	local puzzleEntries, puzzleSkipped = PuzzleTableService.build(
+		session.puzzle,
+		(loaded :: any).nodes,
+		variantId,
+		Config.TABLE_WIDTH,
+		Config.TABLE_HEIGHT,
+		function(): number
+			return rng:NextNumber()
+		end
+	)
+	for _, nodeId in puzzleSkipped do
+		warn(
+			string.format(
+				"[Triangulate] node bukti '%s' punya tipe puzzle yang belum dikenal; dilewati",
+				nodeId
+			)
+		)
+	end
+	for _, entry in puzzleEntries do
+		PuzzleTableService.register(session.puzzle, entry)
+	end
 
 	-- Briefing per role. PRD §9: Role Card berisi "Kamu tahu apa / Tidak tahu
 	-- apa / Tugas pertamamu". Tiap role menerima proyeksi berbeda, dan tidak
@@ -317,6 +367,17 @@ local function startSession(): ()
 		methods = (loaded :: any).methods,
 	}
 	fireToRole("SessionState", "accusation_options", options)
+
+	-- Meja pertama yang belum selesai dikirim ke Handler dan Director. Searcher
+	-- tidak menerimanya: `Net.CLIENT_VIEWS.puzzle_state` sengaja tidak punya
+	-- entri untuknya -- ia ada di lokasi, bukan di meja (PRD §3), dan
+	-- `fireToRole` melewati role yang view-nya `nil`.
+	local first = PuzzleTableService.firstUnsolved(session.puzzle)
+	if first ~= nil then
+		fireToRole("PuzzleState", "puzzle_state", PuzzleTable.clientPayload(first.state))
+	else
+		warn(string.format("[Triangulate] kasus '%s' tidak punya meja puzzle aktif", caseId))
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -467,7 +528,110 @@ local function handleReport(player: Player, payload: any): ()
 	fireToRole("ReportCard", "report_card", payload :: { [string]: any })
 end
 
+-- Mencari node `clue_card` berdasarkan id-nya di data kasus. Dipakai saat
+-- sebuah meja bukti selesai: `entry.yields` adalah id Clue Card, dan isinya
+-- dibaca dari data supaya tidak ada salinan teks clue di kode.
+local function clueCardById(case: CaseLoader.Case, id: string): { [string]: any }?
+	local nodes = (case :: any).nodes
+	if type(nodes) ~= "table" then
+		return nil
+	end
+	for _, node in nodes do
+		if type(node) == "table" and node.id == id then
+			return node
+		end
+	end
+	return nil
+end
+
+local function handlePlacePiece(player: Player, payload: any): ()
+	local current = session
+	if current == nil then
+		return
+	end
+
+	-- PRD §3 dan §8: Handler pemilik meja; Director boleh mengambil alih pada
+	-- mode 2 pemain. Searcher tidak pernah menyentuh meja.
+	local role = roleOf(player.UserId)
+	if not PuzzleTableService.canPlace(role) then
+		return
+	end
+
+	local pieceId, u, v = PuzzleTableService.parsePlacement(payload)
+	if pieceId == nil or u == nil or v == nil then
+		return
+	end
+
+	-- Meja mana yang sedang disentuh pemain ini. Node id dikirim client hanya
+	-- sebagai penanda meja, dan tetap divalidasi terhadap meja yang memang ada
+	-- di sesi ini -- client tidak bisa mengarang node id.
+	local nodeId = (payload :: { [string]: any }).node_id
+	if type(nodeId) ~= "string" then
+		return
+	end
+
+	local entry = PuzzleTableService.get(current.puzzle, nodeId)
+	if entry == nil then
+		return
+	end
+
+	TelemetryService.record(current.telemetry, {
+		kind = "input",
+		role = role,
+		t = os.clock(),
+		detail = nodeId,
+	})
+
+	local result, solved = PuzzleTableService.place(current.puzzle, nodeId, pieceId, u, v)
+	if result == nil then
+		return
+	end
+
+	-- Hasil keputusan server dikirim kembali ke kedua role yang memegang meja.
+	-- Payload ini TIDAK memuat `target`/`correct` (lihat `PuzzleTable.clientPayload`
+	-- dan `applyDrop`), jadi client tidak pernah tahu letak yang benar.
+	fireToRole("PiecePlaced", "piece_placed", result)
+
+	if solved and entry.yields ~= nil then
+		-- PRD §4: "Bukti yang selesai terkirim ke Director sebagai Clue Card."
+		-- Isi Clue Card dibaca dari node `clue_card` di data kasus, bukan
+		-- dikarang di sini: data kasus tetap satu sumber kebenaran, dan
+		-- `source` (id bukti asalnya) hanya sampai ke Director lewat
+		-- `Net.CLIENT_VIEWS.clue_card`.
+		local node = clueCardById(current.case, entry.yields)
+		if node ~= nil then
+			-- Nama field di sini mengikuti kontrak view `clue_card`
+			-- (`docs/integrasi-stage-1.md`: `id`, `title`, `summary`, dan
+			-- `source` khusus Director), sedangkan data kasus menamai teks
+			-- manusianya `label`. Pemetaan `label` -> `title` dilakukan di
+			-- sini, satu tempat, alih-alih menambah alias di data.
+			-- `summary` tidak diisi karena data kasus belum punya teks
+			-- ringkas terpisah; field kosong lebih jujur daripada mengarang.
+			fireToRole("ClueCard", "clue_card", {
+				id = node.id,
+				title = node.label,
+				source = node.source,
+			})
+		else
+			warn(
+				string.format(
+					"[Triangulate] bukti '%s' menghasilkan Clue Card '%s' yang tidak ada di kasus",
+					nodeId,
+					entry.yields
+				)
+			)
+		end
+
+		-- Meja berikutnya menyusul, supaya Handler tidak menunggu perintah.
+		local nextEntry = PuzzleTableService.firstUnsolved(current.puzzle)
+		if nextEntry ~= nil then
+			fireToRole("PuzzleState", "puzzle_state", PuzzleTable.clientPayload(nextEntry.state))
+		end
+	end
+end
+
 remotes.SubmitDeduction.OnServerEvent:Connect(handleDeduce)
+remotes.PlacePiece.OnServerEvent:Connect(handlePlacePiece)
 remotes.Accuse.OnServerEvent:Connect(handleAccuse)
 remotes.ConfirmAccusation.OnServerEvent:Connect(handleConfirm)
 remotes.Report.OnServerEvent:Connect(handleReport)

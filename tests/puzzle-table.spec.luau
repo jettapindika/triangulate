@@ -466,3 +466,99 @@ Harness.equal(
 	{ x = 0.75, y = 0.75 },
 	"sudut sel terakhir pada grid 4x4 berada di tiga per empat bidang"
 )
+
+Harness.suite("PuzzleTable: clampNormalized")
+
+-- Penjepitan ini dipakai DUA sisi: server lewat `applyDrop`, client untuk
+-- memprediksi hasil yang sama. Kalau keduanya menyimpang, potongan akan
+-- dikoreksi server pada setiap drop -- persis yang diukur S0.2 ("<= 1 koreksi
+-- per 16 potongan").
+local clampBoard = board()
+
+Harness.equal(
+	PuzzleTable.clampNormalized(clampBoard, 0.5, 0.5),
+	{ x = 0.5, y = 0.5 },
+	"titik di tengah meja tidak diubah"
+)
+Harness.equal(
+	PuzzleTable.clampNormalized(clampBoard, -3, -3),
+	{ x = 0.125, y = 0.125 },
+	"titik jauh di luar meja dijepit ke PUSAT sel tepi, bukan tepi bidang"
+)
+Harness.equal(
+	PuzzleTable.clampNormalized(clampBoard, 4, 4),
+	{ x = 0.875, y = 0.875 },
+	"titik jauh di luar meja sisi lain dijepit ke pusat sel tepi terakhir"
+)
+Harness.equal(
+	PuzzleTable.clampNormalized(clampBoard, 0 / 0, 0.5),
+	nil,
+	"NaN ditolak sebelum math.floor, bukan menghasilkan sel yang tampak sah"
+)
+Harness.equal(
+	PuzzleTable.clampNormalized(clampBoard, math.huge, 0.5),
+	nil,
+	"infinitas ditolak, bukan menghasilkan sel tepi"
+)
+Harness.equal(
+	PuzzleTable.clampNormalized(clampBoard, 0.5, -math.huge),
+	nil,
+	"infinitas negatif pada v juga ditolak"
+)
+
+-- Identitas yang paling penting: prediksi client (clampNormalized +
+-- normalizedToPoint + resolveDrop) harus memberi keputusan yang sama dengan
+-- jalur server (applyDrop). Kalau tidak, setiap drop akan dikoreksi.
+local function freshScattered(): PuzzleTable.State
+	local seed = 0
+	local function rng(): number
+		seed += 1
+		return (seed * 0.37) % 1
+	end
+	local regions: { number } = {}
+	for index = 0, 15 do
+		table.insert(regions, index)
+	end
+	return PuzzleTable.scatter(
+		PuzzleTable.newState("torn_doc:ev_schedule", PuzzleTable.newBoard(4, 4, 8, 8), regions),
+		rng
+	)
+end
+
+local cases: { { number } } = {
+	{ 0.125, 0.125 },
+	{ 0.25, 0.25 },
+	{ 0.875, 0.875 },
+	{ -2, 3 },
+	{ 1.4, -0.9 },
+}
+
+local mismatches = 0
+for _, probe in cases do
+	local serverState = freshScattered()
+	local clientState = freshScattered()
+	local pieceId = serverState.pieces[1].id
+
+	local serverPayload = PuzzleTable.applyDrop(serverState, pieceId, probe[1], probe[2])
+
+	local normalized = PuzzleTable.clampNormalized(clientState.board, probe[1], probe[2])
+	if normalized ~= nil then
+		local point = PuzzleTable.normalizedToPoint(clientState.board, normalized.x, normalized.y)
+		local cell, snapped =
+			PuzzleTable.resolveDrop(clientState.board, point, clientState.pieces[1].pos)
+		local accepted = cell ~= nil
+		if
+			accepted ~= (serverPayload.accepted == true)
+			or snapped.x ~= serverPayload.x
+			or snapped.y ~= serverPayload.y
+		then
+			mismatches += 1
+		end
+	end
+end
+
+Harness.equal(
+	mismatches,
+	0,
+	"prediksi client memakai clampNormalized + resolveDrop sama persis dengan applyDrop server"
+)

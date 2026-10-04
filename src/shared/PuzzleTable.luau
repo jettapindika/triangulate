@@ -552,6 +552,36 @@ local function isFinite(value: number): boolean
 end
 
 --[[
+	Menjepit posisi jari ternormalisasi ke dalam bidang meja, dengan pusat sel
+	tepi sebagai batas.
+
+	Kenapa dijepit ke PUSAT sel tepi, bukan ke tepi bidang: kalau dijepit ke
+	tepi bidang, jari yang keluar meja selalu mendarat tepat di sudut sel --
+	jarak 0,707 sel, di luar toleransi -- sehingga menyeret ke luar justru
+	SELALU ditolak. Menjepit ke pusat sel tepi membuat "keluar meja" berarti
+	"sel tepi terdekat", yang itu yang dimaksud pemain.
+
+	Mengembalikan `nil` bila `u`/`v` bukan angka berhingga: NaN dan infinitas
+	harus berhenti di sini, sebelum `math.floor`, karena `math.floor(NaN)`
+	mengembalikan angka yang tampak sah -- bukan error.
+
+	Ini satu-satunya tempat penjepitan itu ditulis. Server memakainya lewat
+	`applyDrop`; client memakainya untuk memprediksi hasil yang sama persis,
+	sehingga prediksi lokal tidak menyimpang dari keputusan server.
+]]
+function PuzzleTable.clampNormalized(board: Board, u: number, v: number): Vec2?
+	if not (isFinite(u) and isFinite(v)) then
+		return nil
+	end
+	local halfCol = 0.5 / board.cols
+	local halfRow = 0.5 / board.rows
+	return {
+		x = math.clamp(u, halfCol, 1 - halfCol),
+		y = math.clamp(v, halfRow, 1 - halfRow),
+	}
+end
+
+--[[
 	Jalur masuk satu drop, dari sudut pandang SERVER.
 
 	Ini komposisi `normalizedToPoint` -> `resolveDrop` -> `place`, yaitu seluruh
@@ -593,19 +623,11 @@ function PuzzleTable.applyDrop(
 		return PuzzleTable.placementPayload(state, pieceId, false), false
 	end
 
-	-- Jari yang keluar bidang dijepit ke tepi, bukan ditolak: menyeret potongan
-	-- melewati tepi meja adalah hal yang wajar dilakukan pemain.
-	--
-	-- Jepitannya adalah pusat sel tepi, bukan tepi bidang. Kalau dijepit ke tepi
-	-- bidang, jari yang keluar meja selalu mendarat tepat di sudut sel -- jarak
-	-- 0,707 sel, di luar toleransi -- sehingga menyeret ke luar justru SELALU
-	-- ditolak. Menjepit ke pusat sel tepi membuat "keluar meja" berarti "sel
-	-- tepi terdekat", yang itu yang dimaksud pemain.
-	local halfCol = 0.5 / state.board.cols
-	local halfRow = 0.5 / state.board.rows
-	local clampedU = math.clamp(u, halfCol, 1 - halfCol)
-	local clampedV = math.clamp(v, halfRow, 1 - halfRow)
-	local point = PuzzleTable.normalizedToPoint(state.board, clampedU, clampedV)
+	local normalized = PuzzleTable.clampNormalized(state.board, u, v)
+	if normalized == nil then
+		return PuzzleTable.placementPayload(state, pieceId, false), false
+	end
+	local point = PuzzleTable.normalizedToPoint(state.board, normalized.x, normalized.y)
 
 	local lastLegal = piece.pos
 	local cell = PuzzleTable.resolveDrop(state.board, point, lastLegal, tolerance)
