@@ -26,3 +26,7 @@ secrets/
 *.pem
 *.key
 !.env.example
+
+# Cache Python dari skrip verifikasi docs/art/ (EXTA-39)
+__pycache__/
+*.pyc

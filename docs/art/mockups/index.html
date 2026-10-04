@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Triangulate - Mockup UI Mobile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Nunito:wght@400;600;700;800&family=Roboto+Mono:wght@400;500;700&family=Special+Elite&display=swap" rel="stylesheet">
+<link href="../tokens.css" rel="stylesheet">
+<style>
+/* ============================================================
+   Triangulate - mockup UI mobile-first
+   Arah visual: PRD v0.2 §3 (cozy noir, non-gore) dan §19
+   ("low-poly noir hangat dengan lampu meja sebagai identitas Handler").
+
+   Design Read: UI game co-op misteri untuk pemain 13+ di mobile,
+   bahasa visual cozy noir berkas cahaya lampu meja,
+   dial ENERGY 2 / RHYTHM 2 / MOTION 1.
+
+   Motif identitas: "kolam cahaya lampu meja" - gradien radial hangat
+   dengan tepi jatuh yang tegas, dipakai konsisten sebagai penanda fokus,
+   sorotan meja, dan arah senter Searcher.
+   ============================================================ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Token warna dan ukuran dibaca dari ../tokens.css (satu-satunya sumber nilai).
+   Jangan menyalin nilai hex ke berkas ini. */
+
+body {
+  background: var(--noir-950);
+  font-family: var(--font-ui);
+  color: var(--paper-100);
+  padding: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+/* Artboard: 390x844 = ukuran logis acuan mobile (lihat ui-spec.md) */
+.screen {
+  width: 390px;
+  height: 844px;
+  background: var(--noir-900);
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border: 1px solid var(--noir-600);
+}
+
+.screen > .label {
+  position: absolute;
+  top: -22px; left: 0;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  color: var(--paper-400); text-transform: uppercase;
+}
+
+/* ---------- Bilah status + safe area ---------- */
+.statusbar {
+  height: 44px; flex: 0 0 44px;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 0 22px 6px;
+  font-size: 12px; font-weight: 700; color: var(--paper-300);
+  letter-spacing: .02em;
+}
+.notch {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 110px; height: 26px; background: #000; border-radius: 14px;
+}
+
+/* ---------- Kolam cahaya: motif identitas ---------- */
+.lamp-pool {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 34%,
+      rgba(240,180,87,.20) 0%,
+      rgba(224,154,46,.10) 42%,
+      rgba(20,16,14,0) 72%);
+}
+.lamp-ring {
+  box-shadow: 0 0 0 2px var(--lamp-300), 0 0 22px 2px rgba(240,180,87,.35);
+}
+
+/* ---------- Kerangka umum ---------- */
+.topbar {
+  height: 52px; flex: 0 0 52px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  background: var(--noir-800);
+  border-bottom: 1px solid var(--noir-600);
+}
+.topbar h1 {
+  font-size: 15px; font-weight: 800; letter-spacing: .01em;
+}
+.topbar .sub { font-size: 11px; color: var(--paper-400); font-weight: 600; }
+.grow { flex: 1 1 auto; }
+
+.body { flex: 1 1 auto; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+.pad { padding: 14px; }
+.pad-sm { padding: 10px; }
+
+/* ---------- Chip role ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: var(--r-sm);
+  font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.searcher { color: var(--role-searcher); }
+.chip.handler  { color: var(--role-handler); }
+.chip.director { color: var(--role-director-text); }
+.chip.npc      { color: var(--role-npc); }
+
+/* ---------- Tombol ---------- */
+.btn {
+  min-height: var(--tap-min);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 0 18px; border: none; border-radius: var(--r-md);
+  font-family: var(--font-ui); font-size: 15px; font-weight: 800;
+  cursor: default; text-align: center;
+}
+.btn.primary { background: var(--lamp-300); color: var(--noir-900); }
+.btn.ghost {
+  background: var(--noir-700); color: var(--paper-100);
+  border: 1px solid var(--line);
+}
+.btn.quiet { background: transparent; color: var(--paper-300); border: 1px solid var(--line); }
+.btn.block { width: 100%; }
+.btn.disabled { background: var(--noir-600); color: var(--paper-400); }
+
+/* State fokus: cincin lampu. Terlihat di atas latar gelap mana pun. */
+.focusable:focus-visible,
+.focus-ring { outline: none; box-shadow: 0 0 0 3px var(--noir-900), 0 0 0 5px var(--lamp-300); }
+
+/* ---------- Kartu ---------- */
+.card {
+  background: var(--noir-800);
+  border: 1px solid var(--noir-600);
+  border-radius: var(--r-md);
+  padding: 12px;
+}
+
+/* ---------- 1. MEJA PUZZLE HANDLER ---------- */
+.table-surface {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 78% 62% at 50% 38%, rgba(240,180,87,.22) 0%, rgba(224,154,46,.08) 45%, rgba(20,16,14,0) 75%),
+    linear-gradient(168deg, var(--wood-500) 0%, var(--wood-700) 55%, var(--wood-900) 100%);
+}
+/* Butir kayu: tekstur material, bukan pola dekoratif. */
+.table-surface::after {
+  content: ""; position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(94deg,
+    rgba(0,0,0,.16) 0 2px, rgba(0,0,0,0) 2px 9px);
+  opacity: .5;
+}
+.piece {
+  position: absolute;
+  background: linear-gradient(150deg, var(--paper-100), var(--paper-300));
+  border-radius: var(--r-sm);
+  box-shadow: 0 6px 14px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-type); color: var(--ink-700); overflow: hidden;
+}
+.piece.torn { clip-path: polygon(0 0, 100% 0, 100% 72%, 88% 84%, 74% 74%, 58% 88%, 40% 76%, 22% 90%, 0 78%); }
+.piece.placed { box-shadow: 0 2px 5px rgba(0,0,0,.4); }
+.slot {
+  position: absolute; border: 1.5px dashed var(--line);
+  border-radius: var(--r-sm); background: rgba(20,16,14,.35);
+}
+.slot.active { border-color: var(--lamp-300); border-style: solid; }
+
+/* ---------- 2. CLUE BOARD DIRECTOR ---------- */
+.clue-card {
+  background: var(--paper-200); color: var(--ink-900);
+  border-radius: var(--r-sm); padding: 9px 10px;
+  font-size: 11.5px; line-height: 1.35; font-weight: 600;
+  box-shadow: 0 4px 10px rgba(0,0,0,.45);
+  position: relative;
+}
+.clue-card .kind {
+  font-family: var(--font-code); font-size: 9px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-700); display: block; margin-bottom: 4px;
+}
+.clue-card.contra { background: var(--paper-contra); }
+.thread {
+  position: absolute; height: 2px; background: var(--alert);
+  transform-origin: 0 50%; opacity: .85;
+}
+.pin-head {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--alert); border: 2px solid var(--noir-900);
+  position: absolute; box-shadow: 0 2px 4px rgba(0,0,0,.5);
+}
+
+/* ---------- 3. PING WHEEL ---------- */
+.wheel { position: relative; width: 288px; height: 288px; margin: 0 auto; }
+.wheel .hub {
+  position: absolute; inset: 84px; border-radius: 50%;
+  background: var(--noir-700); border: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+}
+.wheel .hub .role { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.wheel .hub .hint { font-size: 9.5px; color: var(--paper-400); }
+.ping-slot {
+  position: absolute; width: 96px; height: 62px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; text-align: center;
+  background: var(--noir-700); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 6px 8px;
+  font-size: 11px; font-weight: 700; line-height: 1.2;
+}
+.ping-slot .ico { font-size: 15px; line-height: 1; }
+.ping-slot.hot { background: var(--lamp-300); color: var(--noir-900); border-color: var(--lamp-300); }
+
+/* ---------- 4. HUD SEARCHER ---------- */
+.world {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 52% 42% at 50% 52%, rgba(255,224,176,.30) 0%, rgba(240,180,87,.10) 45%, rgba(20,16,14,0) 72%),
+    linear-gradient(180deg, var(--noir-700) 0%, var(--noir-900) 62%, var(--noir-950) 100%);
+}
+.ray {
+  position: absolute; left: 50%; top: 52%;
+  width: 340px; height: 340px; margin: -170px 0 0 -170px;
+  background: conic-gradient(from -32deg at 50% 50%,
+    rgba(255,224,176,.22) 0deg, rgba(255,224,176,0) 64deg,
+    rgba(255,224,176,0) 296deg, rgba(255,224,176,.22) 360deg);
+  border-radius: 50%;
+}
+.reticle {
+  position: absolute; left: 50%; top: 52%; transform: translate(-50%,-50%);
+  width: 26px; height: 26px; border: 1.5px solid rgba(244,237,225,.6); border-radius: 50%;
+}
+.marker {
+  position: absolute; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 800;
+}
+.marker .flag {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; border: 2px solid var(--noir-900);
+}
+.marker.target .flag { background: var(--role-handler); color: var(--noir-900); }
+.marker.pin .flag { background: var(--role-director); color: var(--noir-900); }
+.marker.report .flag { background: var(--ok); color: var(--noir-900); }
+.marker .tag {
+  background: rgba(20,16,14,.86); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 2px 6px; color: var(--paper-100);
+}
+
+.compass {
+  width: 100%; height: 34px; border-radius: var(--r-sm);
+  background: rgba(29,24,21,.9); border: 1px solid var(--line);
+  display: flex; align-items: center; position: relative; overflow: hidden;
+}
+.compass .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); opacity: .6; }
+.compass .needle {
+  position: absolute; top: 4px; bottom: 4px; width: 3px; border-radius: 2px;
+  background: var(--lamp-300);
+}
+
+.hud-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 12px 14px;
+  background: linear-gradient(0deg, rgba(20,16,14,.96) 40%, rgba(20,16,14,0) 100%);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.hud-row { display: flex; gap: 8px; align-items: center; }
+.hud-btn {
+  width: var(--tap-min); height: var(--tap-min); flex: 0 0 var(--tap-min);
+  border-radius: var(--r-md); background: rgba(40,32,25,.94);
+  border: 1px solid var(--line); color: var(--paper-100);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; font-size: 9px; font-weight: 700;
+}
+.hud-btn .ico { font-size: 16px; }
+.hud-btn.report {
+  flex: 1 1 auto; width: auto; flex-direction: row; gap: 8px;
+  background: var(--ok); color: var(--noir-900); border-color: var(--ok);
+  font-size: 15px; font-weight: 800;
+}
+
+/* ---------- 5. LOBBY ---------- */
+.role-opt {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 62px; padding: 10px 12px;
+  background: var(--noir-800); border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.role-opt.picked { border-color: var(--lamp-300); background: var(--noir-700); }
+.role-opt .num {
+  width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
+  background: var(--lamp-300); color: var(--noir-900);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800;
+}
+.role-opt .num.empty { background: transparent; border: 1.5px dashed var(--line); color: var(--paper-400); }
+.role-opt .name { font-size: 14px; font-weight: 800; }
+.role-opt .desc { font-size: 11px; color: var(--paper-400); font-weight: 600; }
+
+.kv { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; line-height: 1.45; }
+.kv .k {
+  flex: 0 0 92px; font-size: 10px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--paper-400); padding-top: 2px;
+}
+.kv .v { color: var(--paper-100); font-weight: 600; }
+
+.timer {
+  font-family: var(--font-code); font-size: 26px; font-weight: 700;
+  color: var(--lamp-300); letter-spacing: .02em;
+}
+.bar { height: 5px; border-radius: 3px; background: var(--noir-600); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--lamp-300); }
+
+/* ---------- 6. CASE RECAP ---------- */
+.stat { display: flex; align-items: baseline; gap: 8px; }
+.stat .n { font-family: var(--font-code); font-size: 22px; font-weight: 700; color: var(--lamp-300); }
+.stat .t { font-size: 11.5px; color: var(--paper-300); font-weight: 600; }
+.rank-badge {
+  width: 74px; height: 74px; flex: 0 0 74px; border-radius: 50%;
+  border: 2px solid var(--lamp-300);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 34%, rgba(240,180,87,.22), rgba(20,16,14,0) 70%);
+}
+.rank-badge .letter { font-family: var(--font-archive); font-size: 32px; font-weight: 900; color: var(--lamp-100); line-height: 1; }
+.rank-badge .cap { font-size: 8.5px; letter-spacing: .1em; color: var(--paper-400); font-weight: 800; }
+
+.timeline { position: relative; padding-left: 18px; }
+.timeline::before { content: ""; position: absolute; left: 5px; top: 4px; bottom: 4px; width: 1px; background: var(--line); }
+.tl-item { position: relative; font-size: 11.5px; line-height: 1.4; color: var(--paper-200); padding: 0 0 10px; }
+.tl-item::before {
+  content: ""; position: absolute; left: -17px; top: 5px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--noir-800); border: 2px solid var(--line);
+}
+.tl-item.done::before { background: var(--ok); border-color: var(--ok); }
+.tl-item.miss::before { background: var(--alert); border-color: var(--alert); }
+.tl-item .who { font-weight: 800; }
+
+/* ---------- Lembar spesifikasi target sentuh ---------- */
+.spec {
+  width: 900px; background: var(--noir-900); border: 1px solid var(--noir-600);
+  border-radius: 12px; padding: 22px;
+}
+.spec h2 { font-size: 17px; margin-bottom: 4px; }
+.spec .lede { font-size: 12.5px; color: var(--paper-300); margin-bottom: 18px; line-height: 1.5; }
+.spec-grid { display: flex; gap: 22px; flex-wrap: wrap; }
+.spec-col { flex: 1 1 250px; }
+.tap-demo {
+  width: var(--tap-min); height: var(--tap-min);
+  background: var(--noir-700); border: 2px solid var(--lamp-300);
+  border-radius: var(--r-md); display: flex; align-items: center; justify-content: center;
+  font-size: 9.5px; font-weight: 800; color: var(--lamp-100); text-align: center;
+}
+.tap-demo.wrong { border-color: var(--alert); width: 36px; height: 36px; color: var(--alert); }
+.gap-demo { display: flex; gap: 8px; align-items: center; }
+.gap-demo .box { width: 48px; height: 48px; background: var(--noir-700); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.spec table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.spec th, .spec td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--noir-600); vertical-align: top; }
+.spec th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--paper-400); }
+.spec td code { font-family: var(--font-code); font-size: 11px; color: var(--lamp-100); }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     1. MEJA PUZZLE HANDLER - kamera Scriptable top-down (PRD §15)
+     ============================================================ -->
+<section class="screen" id="s1">
+  <div class="label">1 - Meja puzzle Handler</div>
+  <div class="table-surface"></div>
+
+  <div class="statusbar" style="position:relative;z-index:3">
+    <span>21:04</span>
+    <span class="chip handler"><i class="dot"></i>Handler</span>
+  </div>
+
+  <div style="position:relative;z-index:3;padding:0 14px;display:flex;gap:8px;align-items:center">
+    <span class="chip" style="color:var(--lamp-300)">Kunci A</span>
+    <span style="font-size:11px;color:var(--paper-300);font-weight:600">Susun jadwal yang robek</span>
+    <span class="grow"></span>
+    <span style="font-size:10.5px;color:var(--paper-400);font-weight:700">Rantai A / 3</span>
+  </div>
+
+  <!-- Papan kerja: area 3x2, potongan diseret ke slot -->
+  <div style="position:absolute;left:50%;top:296px;transform:translate(-50%,-50%);width:300px;height:198px;z-index:2">
+    <div class="slot" style="left:0;top:0;width:94px;height:62px"></div>
+    <div class="slot" style="left:103px;top:0;width:94px;height:62px"></div>
+    <div class="slot" style="left:206px;top:0;width:94px;height:62px"></div>
+    <div class="slot active lamp-ring" style="left:0;top:70px;width:94px;height:62px"></div>
+    <div class="slot" style="left:103px;top:70px;width:94px;height:62px"></div>
+    <div class="slot" style="left:206px;top:70px;width:94px;height:62px"></div>
+
+    <div class="piece placed" style="left:1px;top:1px;width:92px;height:60px;font-size:15px">21:00</div>
+    <div class="piece placed" style="left:104px;top:1px;width:92px;height:60px;font-size:15px">satpam</div>
+    <div class="piece" style="left:207px;top:1px;width:92px;height:60px;font-size:13px">off duty</div>
+    <!-- Potongan aktif diangkat: bayangan lebih dalam + cincin lampu -->
+    <div class="piece torn lamp-ring" style="left:2px;top:71px;width:92px;height:60px;font-size:14px">ruang staf</div>
+    <div class="piece" style="left:104px;top:71px;width:92px;height:60px;font-size:13px">kurator</div>
+    <div class="piece" style="left:207px;top:71px;width:92px;height:60px;font-size:12px">kartu akses</div>
+  </div>
+
+  <!-- Table Preview: Director menonton meja ini, read-only (PRD §7) -->
+  <div style="position:absolute;right:14px;top:404px;z-index:3;background:rgba(29,24,21,.94);border:1px solid var(--line);border-radius:var(--r-md);padding:7px 9px;display:flex;align-items:center;gap:7px">
+    <span style="font-size:13px">&#9673;</span>
+    <span style="font-size:10px;font-weight:700;color:var(--paper-300)">Director menonton</span>
+  </div>
+
+  <div class="hud-bottom" style="z-index:3">
+    <div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--paper-300);font-weight:600">
+      <span style="color:var(--alert);font-weight:800">Timer cleanup</span>
+      <span style="font-family:var(--font-code);color:var(--alert)">01:47</span>
+      <span class="grow"></span>
+      <span>1 bukti terhapus</span>
+    </div>
+    <div class="bar"><i style="width:38%;background:var(--alert)"></i></div>
+    <div class="hud-row">
+      <button class="btn ghost" style="flex:0 0 96px;font-size:13px">Putar meja</button>
+      <button class="btn primary" style="flex:1 1 auto">Kirim ke Director</button>
+    </div>
+  </div>
+</section>
+<!-- TODO(mockup): tombol Putar meja dan Kirim ke Director belum berperilaku. Perilaku yang diminta ada di ui-spec.md bagian 5, layar 1. -->
+
+<!-- ============================================================
+     2. CLUE BOARD DIRECTOR - UI 2D (PRD §4, §5)
+     ============================================================ -->
+<section class="screen" id="s2">
+  <div class="label">2 - Clue board Director</div>
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>21:09</span>
+    <span class="chip director"><i class="dot"></i>Director</span>
+  </div>
+
+  <div class="topbar" style="border-bottom:none;background:transparent;height:44px;flex:0 0 44px">
+    <h1 style="font-family:var(--font-archive);font-size:19px">Clue Board</h1>
+    <span class="grow"></span>
+    <span style="font-size:11px;font-weight:700;color:var(--paper-300)">4/6 deduksi</span>
+  </div>
+
+  <div class="body" style="background:
+      radial-gradient(ellipse 74% 48% at 50% 26%, rgba(240,180,87,.13) 0%, rgba(20,16,14,0) 70%), var(--noir-900)">
+    <div style="position:relative;height:392px;margin:0 12px">
+
+      <div class="clue-card" style="position:absolute;left:0;top:16px;width:158px">
+        <span class="kind">Clue A - Jadwal</span>
+        Satpam off duty jam 21.00, ruang staf kosong.
+      </div>
+
+      <div class="clue-card" style="position:absolute;right:0;top:8px;width:158px">
+        <span class="kind">Clue B - Akses</span>
+        Kartu kurator dipakai di loker jam 21.10.
+      </div>
+
+      <!-- Benang kontradiksi: pernyataan vs bukti -->
+      <div class="thread" style="left:156px;top:52px;width:62px;transform:rotate(9deg)"></div>
+      <div class="pin-head" style="left:150px;top:46px"></div>
+
+      <div class="clue-card contra" style="position:absolute;left:0;top:118px;width:170px">
+        <span class="kind" style="color:var(--ink-alert)">Pernyataan - Kurator</span>
+        "Saya pulang jam 20.30, tidak kembali ke galeri."
+      </div>
+
+      <div class="clue-card" style="position:absolute;right:0;top:126px;width:150px">
+        <span class="kind">Clue C - Motif</span>
+        Kolektor tahu lukisan itu palsu.
+      </div>
+
+      <!-- Deduksi hasil kombinasi -->
+      <div style="position:absolute;left:0;right:0;top:212px;background:var(--noir-700);border:1px solid var(--lamp-300);border-radius:var(--r-md);padding:11px">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--lamp-300);text-transform:uppercase">Deduksi terbuka</span>
+          <span class="grow"></span>
+          <span class="chip" style="color:var(--alert);font-size:10px">Kontradiksi</span>
+        </div>
+        <p style="font-size:12.5px;line-height:1.45;font-weight:600">
+          A + B: kurator punya akses saat satpam tidak jaga. Bertentangan dengan alibinya.
+        </p>
+        <p style="font-size:11px;color:var(--paper-400);margin-top:6px;font-weight:600">
+          Pinpoint baru: ruang kantor kurator
+        </p>
+      </div>
+
+      <div style="position:absolute;left:0;top:318px;display:flex;gap:8px">
+        <span class="chip" style="color:var(--ok);font-size:10px">Motif belum</span>
+        <span class="chip" style="color:var(--ok);font-size:10px">Cara belum</span>
+      </div>
+    </div>
+
+    <div class="pad-sm" style="margin-top:auto;display:flex;flex-direction:column;gap:9px">
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 12px">
+        <div style="flex:1 1 auto">
+          <div style="font-size:12.5px;font-weight:800">Form tuduhan terkunci</div>
+          <div style="font-size:11px;color:var(--paper-400);font-weight:600">Butuh 4 dari 6 deduksi kunci dan 1 kontradiksi</div>
+        </div>
+        <span style="font-family:var(--font-code);font-size:17px;font-weight:700;color:var(--paper-400)">4/6</span>
+      </div>
+      <div class="hud-row">
+        <button class="btn quiet" style="flex:1 1 auto;font-size:14px">Peta</button>
+        <button class="btn ghost" style="flex:1 1 auto;font-size:14px">Pernyataan</button>
+        <button class="btn disabled" style="flex:1 1 auto;font-size:14px">Tuduh</button>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- TODO(mockup): tombol Peta, Pernyataan, dan Tuduh belum berperilaku; Tuduh tampil nonaktif karena gerbang deduksi PRD §5 belum terpenuhi. Perilaku ada di ui-spec.md bagian 5, layar 2. -->
+
+<!-- ============================================================
+     3. PING WHEEL - kontekstual per role (PRD §7)
+     ============================================================ -->
+<section class="screen" id="s3">
+  <div class="label">3 - Ping wheel Searcher</div>
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>21:12</span>
+    <span class="chip searcher"><i class="dot"></i>Searcher</span>
+  </div>
+
+  <div class="topbar" style="border-bottom:none;background:transparent;height:40px;flex:0 0 40px">
+    <h1>Kirim ping</h1>
+    <span class="grow"></span>
+    <span style="font-size:11px;color:var(--paper-400);font-weight:700">Tekan dan tahan</span>
+  </div>
+
+  <div class="body lamp-pool" style="padding-top:14px">
+    <div class="wheel">
+      <div class="ping-slot hot" style="left:96px;top:0">
+        <span class="ico">&#9873;</span>Nemu sesuatu!
+      </div>
+      <div class="ping-slot" style="left:192px;top:34px">
+        <span class="ico">&#128274;</span>Terkunci, butuh kode
+      </div>
+      <div class="ping-slot" style="left:192px;top:122px">
+        <span class="ico">&#9888;</span>Ada bahaya
+      </div>
+      <div class="ping-slot" style="left:192px;top:210px">
+        <span class="ico">&#10003;</span>Sudah dicek
+      </div>
+      <div class="ping-slot" style="left:96px;top:226px">
+        <span class="ico">&#8635;</span>Tolong ulangi
+      </div>
+      <div class="ping-slot" style="left:0;top:210px">
+        <span class="ico">&#63;</span>Ragu
+      </div>
+      <div class="ping-slot" style="left:0;top:122px">
+        <span class="ico">&#9679;</span>Setuju
+      </div>
+      <div class="ping-slot" style="left:0;top:34px">
+        <span class="ico">&#9906;</span>Arahkan aku
+      </div>
+
+      <div class="hub">
+        <span class="role" style="color:var(--role-searcher)">Searcher</span>
+        <span class="hint">8 frasa</span>
+      </div>
+    </div>
+
+    <div style="padding:16px 18px 0;text-align:center">
+      <p style="font-size:11.5px;line-height:1.5;color:var(--paper-300);font-weight:600">
+        Frasa berubah mengikuti role dan situasi. Semua role memakai roda yang sama,
+        isinya menyesuaikan.
+      </p>
+    </div>
+
+    <div style="margin-top:auto;padding:0 16px 16px">
+      <div class="card" style="display:flex;align-items:center;gap:9px;padding:10px 12px">
+        <span style="font-size:15px;color:var(--role-handler)">&#9673;</span>
+        <div style="flex:1 1 auto">
+          <div style="font-size:12px;font-weight:800">Target Marker aktif</div>
+          <div style="font-size:10.5px;color:var(--paper-400);font-weight:600">Handler: cari benda bertanda bintang</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     4. HUD SEARCHER - first/third person (PRD §7, §15)
+     ============================================================ -->
+<section class="screen" id="s4">
+  <div class="label">4 - HUD Searcher</div>
+  <div class="world"></div>
+  <div class="ray"></div>
+
+  <div class="statusbar" style="position:relative;z-index:3">
+    <span>21:15</span>
+    <span class="chip searcher"><i class="dot"></i>Searcher</span>
+  </div>
+
+  <div style="position:relative;z-index:3;padding:0 12px">
+    <div class="compass">
+      <span style="position:absolute;left:6px;font-size:10px;font-weight:800;color:var(--paper-400)">B</span>
+      <span class="tick" style="left:78px"></span>
+      <span class="tick" style="left:156px"></span>
+      <span class="tick" style="left:234px"></span>
+      <span class="tick" style="left:312px"></span>
+      <!-- Jarum: arah Target Marker dari Handler -->
+      <span class="needle" style="left:196px"></span>
+      <span style="position:absolute;right:6px;font-size:10px;font-weight:800;color:var(--role-handler)">T</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;font-weight:700;color:var(--paper-400)">
+      <span>Galeri lantai 1</span>
+      <span style="color:var(--role-handler)">Target 34 m</span>
+    </div>
+  </div>
+
+  <div class="reticle" style="z-index:3"></div>
+
+  <div class="marker target" style="left:96px;top:290px;z-index:3">
+    <span class="flag">&#9733;</span>
+    <span class="tag">Benda bertanda</span>
+  </div>
+
+  <div class="marker pin" style="left:268px;top:368px;z-index:3">
+    <span class="flag">&#9673;</span>
+    <span class="tag">Pinpoint Director</span>
+  </div>
+
+  <div class="marker report" style="left:180px;top:452px;z-index:3">
+    <span class="flag">&#128269;</span>
+    <span class="tag">Bisa diperiksa</span>
+  </div>
+
+  <div class="hud-bottom" style="z-index:3">
+    <div style="display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--paper-300);font-weight:700">
+      <span class="chip" style="color:var(--ok);font-size:10px">2 bukti dilaporkan</span>
+      <span class="grow"></span>
+      <span>Timer cleanup 01:12</span>
+    </div>
+    <div class="hud-row">
+      <div class="hud-btn"><span class="ico">&#9788;</span>UV</div>
+      <div class="hud-btn"><span class="ico">&#9707;</span>Tahan</div>
+      <div class="hud-btn"><span class="ico">&#9906;</span>Ping</div>
+      <button class="hud-btn report"><span class="ico">&#128247;</span>Report</button>
+    </div>
+  </div>
+</section>
+<!-- TODO(mockup): tombol Report, UV, Tahan, dan Ping belum berperilaku. Perilaku ada di ui-spec.md bagian 5, layar 4. -->
+
+<!-- ============================================================
+     5. LOBBY + ROLE CARD - 2 preferensi role (PRD §8, §9)
+     ============================================================ -->
+<section class="screen" id="s5">
+  <div class="label">5 - Lobby dan role card</div>
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>21:20</span>
+    <span style="font-size:11px;font-weight:700;color:var(--paper-400)">Private server</span>
+  </div>
+
+  <div class="body" style="overflow:hidden">
+    <div class="pad">
+      <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:4px">
+        <span class="timer">0:32</span>
+        <span style="font-size:11.5px;color:var(--paper-300);font-weight:700;padding-bottom:5px">sampai mulai</span>
+      </div>
+      <div class="bar" style="margin-bottom:16px"><i style="width:64%"></i></div>
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-400);margin-bottom:8px">
+        Pilih 2 preferensi role
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+        <div class="role-opt picked">
+          <span class="num">1</span>
+          <div style="flex:1 1 auto">
+            <div class="name" style="color:var(--role-handler)">Handler</div>
+            <div class="desc">Rekonstruksi bukti di meja</div>
+          </div>
+          <span style="font-size:11px;font-weight:800;color:var(--lamp-300)">Prioritas 1</span>
+        </div>
+        <div class="role-opt picked">
+          <span class="num">2</span>
+          <div style="flex:1 1 auto">
+            <div class="name" style="color:var(--role-searcher)">Searcher</div>
+            <div class="desc">Jelajah lokasi, temukan objek</div>
+          </div>
+          <span style="font-size:11px;font-weight:800;color:var(--lamp-300)">Prioritas 2</span>
+        </div>
+        <div class="role-opt">
+          <span class="num empty">3</span>
+          <div style="flex:1 1 auto">
+            <div class="name" style="color:var(--role-director-text)">Director</div>
+            <div class="desc">Gabungkan clue, tuduh pelaku</div>
+          </div>
+          <span style="font-size:11px;font-weight:700;color:var(--paper-400)">Tersedia</span>
+        </div>
+      </div>
+
+      <!-- Role card: apa yang kamu tahu dan tidak tahu (PRD §9) -->
+      <div class="card" style="border-color:var(--lamp-300);background:var(--noir-700);margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span class="chip handler"><i class="dot"></i>Role card</span>
+          <span class="grow"></span>
+          <span style="font-size:10px;color:var(--paper-400);font-weight:700">Sesi ke-1</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div class="kv">
+            <span class="k" style="color:var(--ok)">Kamu tahu</span>
+            <span class="v">Arsip target dan potongan bukti yang masuk ke mejamu</span>
+          </div>
+          <div class="kv">
+            <span class="k" style="color:var(--alert)">Kamu tidak</span>
+            <span class="v">Lokasi objek dan isi pernyataan saksi</span>
+          </div>
+          <div class="kv">
+            <span class="k" style="color:var(--lamp-300)">Tugas awal</span>
+            <span class="v">Tandai satu target dari arsip, lalu kirim ke Searcher</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;font-size:11.5px;font-weight:700;color:var(--paper-300)">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--ok)"></span>
+        Kamu siap
+        <span class="grow"></span>
+        <span style="color:var(--paper-400)">2 dari 3 pemain siap</span>
+      </div>
+    </div>
+
+    <div style="margin-top:auto;padding:0 14px 16px;display:flex;flex-direction:column;gap:9px">
+      <button class="btn ghost block" style="font-size:14px">Tukar role dengan pemain lain</button>
+      <button class="btn primary block">Siap, mulai kasus</button>
+    </div>
+  </div>
+</section>
+<!-- TODO(mockup): tombol Tukar role dan Siap mulai kasus belum berperilaku. Perilaku ada di ui-spec.md bagian 5, layar 5. -->
+
+<!-- ============================================================
+     6. CASE RECAP (PRD §11)
+     ============================================================ -->
+<section class="screen" id="s6">
+  <div class="label">6 - Case Recap</div>
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>21:47</span>
+    <span class="chip" style="color:var(--ok)"><i class="dot"></i>Kasus selesai</span>
+  </div>
+
+  <div class="body" style="overflow:hidden">
+    <div class="pad" style="padding-bottom:0">
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
+        <div class="rank-badge">
+          <span class="letter">S</span>
+          <span class="cap">RANK</span>
+        </div>
+        <div style="flex:1 1 auto">
+          <div style="font-family:var(--font-archive);font-size:18px;font-weight:900;line-height:1.2;margin-bottom:4px">
+            Lukisan yang Tertukar
+          </div>
+          <div style="font-size:11.5px;color:var(--paper-300);font-weight:600;line-height:1.45">
+            Tuduhan benar pada percobaan ke-1, tanpa hint.
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:18px;margin-bottom:16px">
+        <div class="stat"><span class="n">26:14</span><span class="t">menit</span></div>
+        <div class="stat"><span class="n">1/3</span><span class="t">tuduhan</span></div>
+        <div class="stat"><span class="n">0</span><span class="t">hint</span></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-400);margin-bottom:10px">
+        Kontribusi tiap role
+      </div>
+    </div>
+
+    <div class="pad" style="padding-top:0;flex:1 1 auto;overflow:hidden">
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+          <span class="chip searcher"><i class="dot"></i>Searcher</span>
+          <span class="grow"></span>
+          <span style="font-family:var(--font-code);font-size:12px;font-weight:700;color:var(--lamp-300)">7 bukti</span>
+        </div>
+        <div class="timeline">
+          <div class="tl-item done"><span class="who">Menemukan</span> sobekan jadwal di ruang staf</div>
+          <div class="tl-item done"><span class="who">Melaporkan</span> kartu akses di loker</div>
+          <div class="tl-item miss"><span class="who">Terlambat</span> 1 bukti terhapus timer cleanup</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+          <span class="chip handler"><i class="dot"></i>Handler</span>
+          <span class="grow"></span>
+          <span style="font-family:var(--font-code);font-size:12px;font-weight:700;color:var(--lamp-300)">5 puzzle</span>
+        </div>
+        <div class="timeline">
+          <div class="tl-item done"><span class="who">Menyusun</span> jadwal robek, rantai A</div>
+          <div class="tl-item done"><span class="who">Memecahkan</span> cipher log akses, rantai B</div>
+        </div>
+      </div>
+
+      <div class="card" style="border-color:var(--lamp-300)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+          <span class="chip director"><i class="dot"></i>Director</span>
+          <span class="grow"></span>
+          <span style="font-family:var(--font-code);font-size:12px;font-weight:700;color:var(--lamp-300)">4 deduksi</span>
+        </div>
+        <div class="timeline">
+          <div class="tl-item done"><span class="who">Membuka</span> deduksi akses dari Clue A + B</div>
+          <div class="tl-item done"><span class="who">Menandai</span> kontradiksi alibi kurator</div>
+          <div class="tl-item done"><span class="who">Menuduh</span> benar pada percobaan ke-1</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:0 14px 16px;display:flex;gap:9px">
+      <button class="btn ghost" style="flex:0 0 120px;font-size:14px">Simpan gambar</button>
+      <button class="btn primary" style="flex:1 1 auto">Kasus berikutnya</button>
+    </div>
+  </div>
+</section>
+<!-- TODO(mockup): tombol Simpan gambar dan Kasus berikutnya belum berperilaku. Perilaku ada di ui-spec.md bagian 5, layar 6. -->
+
+<!-- ============================================================
+     CATATAN IKON
+     Ikon di seluruh berkas ini digambar sebagai bentuk CSS (.dot, .ray,
+     .reticle, .pin-head) atau memakai karakter Unicode sebagai placeholder
+     yang jujur: kunci, kaca pembesar, kamera, panah bendera, tanda seru,
+     tanda centang, dan matahari UV. Semuanya punya arti langsung di
+     layarnya, bukan hiasan. Tidak ada set ikon pihak ketiga yang dipakai,
+     dan tidak ada ikon final yang diklaim di sini. Ikon final digambar
+     workstream teknis mengikuti bentuk di art-bible.md bagian 2.
+     ============================================================ -->
+
+<!-- ============================================================
+     LEMBAR SPESIFIKASI TARGET SENTUH
+     ============================================================ -->
+<section class="spec" id="spec">
+  <h2>Target sentuh dan aturan responsif</h2>
+  <p class="lede">
+    Semua nilai di bawah adalah satuan <strong>offset Roblox</strong> (point), bukan piksel fisik perangkat.
+    Angka minimum mengikuti panduan aksesibilitas industri; verifikasi perangkat nyata ada di EXTA-40.
+  </p>
+
+  <div class="spec-grid" style="margin-bottom:22px">
+    <div class="spec-col">
+      <div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:12px">
+        <div style="text-align:center">
+          <div class="tap-demo">48 x 48<br>minimum</div>
+          <div style="font-size:10px;color:var(--ok);font-weight:800;margin-top:6px">PASS</div>
+        </div>
+        <div style="text-align:center">
+          <div class="tap-demo wrong">36 x 36</div>
+          <div style="font-size:10px;color:var(--alert);font-weight:800;margin-top:6px">FAIL</div>
+        </div>
+        <div style="text-align:center">
+          <div class="gap-demo"><span class="box"></span><span class="box"></span></div>
+          <div style="font-size:10px;color:var(--paper-400);font-weight:800;margin-top:6px">jarak 8</div>
+        </div>
+      </div>
+      <p style="font-size:11.5px;color:var(--paper-300);line-height:1.5;font-weight:600">
+        Target di bawah 48 point tidak boleh dipakai untuk aksi utama. Jarak antar target minimal 8 point
+        supaya salah tekan tidak terjadi saat pemain berjalan.
+      </p>
+    </div>
+
+    <div class="spec-col">
+      <table>
+        <tr><th>Elemen</th><th>Min</th><th>Catatan</th></tr>
+        <tr><td>Aksi utama (Report, Tuduh, Siap)</td><td><code>56</code></td><td>Tinggi penuh, melebar</td></tr>
+        <tr><td>Aksi sekunder (UV, Ping, Peta)</td><td><code>48</code></td><td>Ikon + label teks</td></tr>
+        <tr><td>Potongan puzzle</td><td><code>48</code></td><td>Area sentuh lebih besar dari gambar</td></tr>
+        <tr><td>Kartu clue</td><td><code>48</code></td><td>Seluruh kartu bisa diseret</td></tr>
+        <tr><td>Slot ping wheel</td><td><code>62</code></td><td>Lebar 96, jarak antar slot 8</td></tr>
+        <tr><td>Baris daftar role</td><td><code>62</code></td><td>Tinggi baris, bukan tinggi teks</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="spec-grid">
+    <div class="spec-col">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-400);margin-bottom:8px">Aturan responsif</div>
+      <ul style="font-size:11.5px;line-height:1.65;color:var(--paper-200);padding-left:16px;font-weight:600">
+        <li>Layout memakai <code style="font-family:var(--font-code)">UDim2</code> skala, bukan posisi piksel tetap.</li>
+        <li>Titik rusak diuji pada lebar 320, 390, dan 430 point, serta rasio 16:9 lanskap.</li>
+        <li>Safe area dari <code style="font-family:var(--font-code)">GuiService</code> supaya notch dan home indicator tidak menutup kontrol.</li>
+        <li>Tidak boleh ada overflow horizontal di lebar 320 point.</li>
+        <li>Teks panjang turun baris, tidak dipotong.</li>
+      </ul>
+    </div>
+    <div class="spec-col">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-400);margin-bottom:8px">State wajib tiap layar</div>
+      <ul style="font-size:11.5px;line-height:1.65;color:var(--paper-200);padding-left:16px;font-weight:600">
+        <li><strong>Kosong:</strong> belum ada clue, meja belum terisi, belum ada pemain.</li>
+        <li><strong>Memuat:</strong> memuat kasus, sinkronisasi state dari server.</li>
+        <li><strong>Galat:</strong> koneksi putus, kasus gagal dimuat, pemain keluar.</li>
+        <li><strong>Fokus:</strong> cincin lampu 3 point, kontras di atas 3:1 di semua latar.</li>
+        <li><strong>Nonaktif:</strong> form tuduhan terkunci menampilkan syaratnya, bukan tombol mati.</li>
+      </ul>
+    </div>
+    <div class="spec-col">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-400);margin-bottom:8px">Yang bukan target sentuh</div>
+      <p style="font-size:11.5px;line-height:1.6;color:var(--paper-200);font-weight:600;margin-bottom:8px">
+        Chip role dan chip status adalah <strong>label</strong>, bukan kontrol. Tingginya 26 point dan itu
+        memang disengaja: tidak ada yang bisa ditekan. Yang perlu target sentuh adalah baris yang
+        memuatnya, dan baris itu 62 point.
+      </p>
+      <p style="font-size:11.5px;line-height:1.6;color:var(--paper-300);font-weight:600">
+        Aturan pembeda: elemen dengan handler sentuh wajib 44 point atau lebih. Tanpa handler, ukurannya
+        mengikuti tipografi.
+      </p>
+    </div>
+  </div>
+
+  <p class="lede" style="margin:22px 0 0;font-size:11.5px">
+    <strong>Mockup ini statis.</strong> Sepuluh tombol di dalamnya menggambar bentuk dan ukuran kontrol,
+    bukan menjalankan aksi. Tidak ada handler dan tidak ada tautan, dan itu disengaja: yang diperiksa
+    di sini adalah tata letak, ukuran target sentuh, dan kontras. Perilaku tiap tombol beserta kelima
+    state layar ada di tabel <code style="font-family:var(--font-code)">ui-spec.md</code> bagian 5 dan 7.
+  </p>
+</section>
+
+<script>
+// Mode render satu layar: index.html#s3 hanya menampilkan layar itu,
+// supaya render.sh bisa memotret tiap layar jadi PNG terpisah.
+// Tanpa hash, semua layar dan lembar spesifikasi tampil seperti biasa.
+(function () {
+  var id = location.hash.replace('#', '');
+  if (!id || !document.getElementById(id)) return;
+  document.querySelectorAll('.screen, .spec').forEach(function (el) {
+    if (el.id !== id) el.style.display = 'none';
+  });
+  var t = document.getElementById(id);
+  t.style.borderRadius = '0';
+  t.style.border = 'none';
+  var lbl = t.querySelector('.label');
+  if (lbl) lbl.style.display = 'none';
+  document.body.style.padding = '0';
+  document.body.style.gap = '0';
+})();
+</script>
+
+</body>
+</html>
