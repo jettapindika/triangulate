@@ -1,0 +1,264 @@
+{
+  "schema_version": "1.1",
+  "case_id": "case_00",
+  "title": "Pena Perak yang Hilang",
+  "kind": "tutorial",
+  "theme": "pencurian kecil",
+  "content_rating": "13+ (non-gore)",
+  "source": "PRD v0.2 bagian 3, 4, 5, 7, 9",
+  "location": {
+    "id": "agency_hq",
+    "name": "Ruang Arsip, Markas Agency",
+    "areas": [
+      { "id": "meja_depan", "name": "Meja Depan" },
+      { "id": "meja_arsip", "name": "Meja Arsip" },
+      { "id": "rak_kurir", "name": "Rak Kurir" }
+    ]
+  },
+  "mentor": {
+    "id": "bu_lastri",
+    "name": "Bu Lastri",
+    "role": "NPC mentor"
+  },
+  "missing_item": "Pena perak berukir huruf L, hadiah dari almarhum suami Bu Lastri",
+  "duration_target_minutes": 5,
+  "gate": {
+    "total_deductions": 3,
+    "key_deductions_required": 2,
+    "min_contradictions": 1,
+    "accusation_attempts": 3,
+    "feedback": "Hanya jumlah field yang benar, tidak menyebut field mana",
+    "source": "PRD v0.2 bagian 5: N = 2 dari 3 untuk Case 0",
+    "note": "PRD menetapkan N=2 untuk Case 0, sedangkan form tuduhan tetap meminta Pelaku, Motif, dan Cara. Dua Deduksi Kunci menutup Pelaku dan Cara; Deduksi Motif bersifat opsional untuk gerbang dan jadi bonus rank. Mentor membuka motif di baris penutup bila tim menuduh tanpa deduksi itu. Ketegangan ini dicatat sebagai butir eskalasi, bukan diputuskan sendiri."
+  },
+  "roles": {
+    "searcher": {
+      "objective": "Temukan tiga benda di ruang arsip: buku tamu di meja depan, slot pena di meja arsip, dan kotak bertanda bintang di rak kurir. Periksa, lalu tekan Report.",
+      "hint": "Kotak bertanda bintang ada di rak paling bawah."
+    },
+    "handler": {
+      "objective": "Rakit tiga bukti di meja: susun sobekan buku tamu, urutkan tiga foto meja, dan pecahkan label kotak.",
+      "hint": "Mulai dari bukti yang potongannya paling sedikit."
+    },
+    "director": {
+      "objective": "Gabungkan dua Clue Card sampai gerbang terbuka, tandai satu Kontradiksi, lalu isi form tuduhan.",
+      "hint": "Bandingkan pernyataan Rio dengan foto meja arsip."
+    }
+  },
+  "nodes": [
+    {
+      "id": "obj_buku_tamu",
+      "type": "object",
+      "chain": "A",
+      "area": "meja_depan",
+      "label": "Buku tamu arsip",
+      "gives_key": "key_a",
+      "mini_action": "hold",
+      "report_text": "Buku tamu arsip terbuka di halaman hari ini. Satu baris tercoret."
+    },
+    {
+      "id": "ev_buku_tamu",
+      "type": "evidence",
+      "chain": "A",
+      "puzzle": "torn_doc",
+      "puzzle_label": "Susun sobekan halaman buku tamu",
+      "needs": ["key_a"],
+      "yields": "clue_a",
+      "asset_sheet": "sheet_torn_doc_2x2"
+    },
+    {
+      "id": "clue_a",
+      "type": "clue",
+      "chain": "A",
+      "holder": "director",
+      "from": "ev_buku_tamu"
+    },
+    {
+      "id": "obj_slot_pena",
+      "type": "object",
+      "chain": "B",
+      "area": "meja_arsip",
+      "label": "Slot pena di meja arsip",
+      "gives_key": "key_b",
+      "mini_action": "senter_uv",
+      "report_text": "Slot kayu kosong. Ada goresan baru di bibir slot."
+    },
+    {
+      "id": "ev_slot_pena",
+      "type": "evidence",
+      "chain": "B",
+      "puzzle": "timeline",
+      "puzzle_label": "Urutkan tiga foto meja arsip",
+      "needs": ["key_b"],
+      "yields": "clue_b",
+      "asset_sheet": "sheet_timeline_3"
+    },
+    {
+      "id": "clue_b",
+      "type": "clue",
+      "chain": "B",
+      "holder": "director",
+      "from": "ev_slot_pena"
+    },
+    {
+      "id": "obj_kotak_titipan",
+      "type": "object",
+      "chain": "C",
+      "area": "rak_kurir",
+      "label": "Kotak titipan bertanda bintang",
+      "gives_key": "key_c",
+      "mini_action": "hold",
+      "report_text": "Kotak kayu bertanda bintang. Tutupnya baru dipaku ulang."
+    },
+    {
+      "id": "ev_label_kotak",
+      "type": "evidence",
+      "chain": "C",
+      "puzzle": "cipher",
+      "puzzle_label": "Pecahkan label kotak dengan roda kode",
+      "needs": ["key_c"],
+      "yields": "clue_c",
+      "asset_sheet": "sheet_cipher_wheel"
+    },
+    {
+      "id": "clue_c",
+      "type": "clue",
+      "chain": "C",
+      "holder": "director",
+      "from": "ev_label_kotak"
+    },
+    {
+      "id": "ded_pena_1",
+      "type": "deduction",
+      "chain": "A",
+      "field": "pelaku",
+      "key": true,
+      "needs": ["clue_a", "clue_b"],
+      "unlocks": ["pin_meja_arsip"]
+    },
+    {
+      "id": "ded_pena_2",
+      "type": "deduction",
+      "chain": "C",
+      "field": "cara",
+      "key": true,
+      "needs": ["clue_a", "clue_c"],
+      "unlocks": ["accusation_cara"]
+    },
+    {
+      "id": "ded_pena_3",
+      "type": "deduction",
+      "chain": "B",
+      "field": "motif",
+      "key": false,
+      "optional_for_gate": true,
+      "needs": ["clue_b", "clue_c"],
+      "unlocks": ["pin_rak_kurir"]
+    }
+  ],
+  "statements": [
+    {
+      "id": "st_rio",
+      "who": "rio",
+      "text": "Aku tidak menyentuh meja arsip hari itu. Aku cuma antar paket lalu langsung keluar.",
+      "lie": true,
+      "contradicted_by": "clue_b"
+    },
+    {
+      "id": "st_dewi",
+      "who": "dewi",
+      "text": "Aku jaga meja depan seharian. Rio memang lewat, tapi aku tidak melihat dia ke meja arsip.",
+      "lie": false,
+      "contradicted_by": null
+    }
+  ],
+  "contradictions": [
+    {
+      "id": "cont_pena_1",
+      "statement": "st_rio",
+      "contradicted_by": "clue_b",
+      "required": true,
+      "reason": "Rio mengaku tidak menyentuh meja arsip, sedangkan foto 15.05 menangkap tangannya menaruh pena di tepi meja."
+    }
+  ],
+  "solution": {
+    "pelaku": "Rio, kurir",
+    "motif": "Pena Rio sendiri retak di ujung. Bentuknya kembar dengan pena perak di slot, dan Rio mengira pena itu miliknya.",
+    "cara": "Rio mengambil pena dari slot saat mengantar paket, lalu membawanya keluar di dalam kotak pribadi bertanda bintang pukul 15.12.",
+    "catatan": "Tutorial memakai pelaku tetap, tanpa varian."
+  },
+  "content": {
+    "ev_buku_tamu": {
+      "pieces": [
+        { "order": 1, "text": "Buku Tamu Arsip, Jumat." },
+        { "order": 2, "text": "15.10 Rio, antar paket arsip." },
+        { "order": 3, "text": "15.14 Rio, keluar." },
+        { "order": 4, "text": "Tidak ada nama lain setelah pukul 15.00." }
+      ],
+      "reassembled": "Buku Tamu Arsip, Jumat. 15.10 Rio, antar paket arsip. 15.14 Rio, keluar. Tidak ada nama lain setelah pukul 15.00."
+    },
+    "ev_slot_pena": {
+      "cards": [
+        { "time": "14.55", "text": "Foto meja arsip. Slot terisi pena perak berukir L." },
+        { "time": "15.05", "text": "Foto meja arsip. Rio menaruh sebuah pena di tepi meja. Pena itu retak di ujungnya." },
+        { "time": "15.20", "text": "Foto meja arsip. Slot kosong. Pena retak masih di tepi meja." }
+      ],
+      "solution_order": ["14.55", "15.05", "15.20"]
+    },
+    "ev_label_kotak": {
+      "key_from_searcher": "Roda kode di samping rak: tiap huruf digeser tiga.",
+      "ciphertext": "NRWDN SULEDGL",
+      "plaintext": "KOTAK PRIBADI",
+      "extra": "Stempel kurir di sisi kotak: keluar 15.12."
+    },
+    "clue_a": "Hanya Rio yang masuk ruang arsip antara pukul 15.00 dan 15.30, yaitu pukul 15.10.",
+    "clue_b": "Foto 14.55 slot terisi pena berukir L. Foto 15.05 Rio menaruh pena retak di tepi meja. Foto 15.20 slot kosong.",
+    "clue_c": "Kotak bertanda bintang adalah kotak pribadi kurir. Kotak itu keluar dari ruang arsip pukul 15.12.",
+    "ded_pena_1": "Rio berada di ruang arsip tepat saat slot pena kosong.",
+    "ded_pena_2": "Rio membawa kotak pribadinya keluar dua menit setelah masuk. Pena ikut di dalam kotak.",
+    "ded_pena_3": "Rio menaruh penanya yang retak di meja dan membawa pena berukir L. Pena itu tertukar, bukan dicuri untuk dijual."
+  },
+  "mentor_lines": [
+    {
+      "trigger": "case_start",
+      "text": "Selamat datang di ruang arsip. Aku Bu Lastri. Pena perakku hilang, dan kalian yang mencari. Aku akan memandu sampai tuduhan pertama."
+    },
+    {
+      "trigger": "first_report",
+      "text": "Bagus. Laporanmu langsung sampai ke clue board Director. Tidak perlu mengetik apa pun."
+    },
+    {
+      "trigger": "first_key",
+      "text": "Kunci ini membuka satu potongan bukti di meja Handler. Kunci selalu datang dari benda di lokasi."
+    },
+    {
+      "trigger": "gate_open",
+      "text": "Dua Deduksi Kunci selesai. Form tuduhan terbuka: pelaku, motif, dan cara. Motif bisa kalian simpulkan dari Clue Card; deduksi motif hanya menambah bonus rank. Minta satu role lain mengonfirmasi sebelum menuduh."
+    },
+    {
+      "trigger": "wrong_accusation",
+      "text": "Belum tepat. Aku hanya bisa bilang berapa field yang benar, bukan yang mana. Baca ulang Clue Card kalian."
+    },
+    {
+      "trigger": "win",
+      "text": "Selesai. Pena itu memang tertukar, bukan dicuri. Sekarang kalian sudah tahu cara kerja satu rantai."
+    }
+  ],
+  "overlays": {
+    "searcher": [
+      { "trigger": "case_start", "text": "Tiga benda ditandai di ruang arsip. Sentuh untuk memeriksa, lalu tekan Report." },
+      { "trigger": "first_report", "text": "Laporan terkirim. Kamu bisa lanjut ke benda berikutnya." },
+      { "trigger": "first_key", "text": "Kunci masuk ke meja Handler. Kamu tidak perlu menunggu." }
+    ],
+    "handler": [
+      { "trigger": "case_start", "text": "Tiga bukti menunggu di meja. Kunci dari Searcher membuka masing-masing bukti." },
+      { "trigger": "first_puzzle", "text": "Seret potongan ke posisinya. Puzzle selesai otomatis mengirim Clue Card." },
+      { "trigger": "first_clue", "text": "Clue Card sudah di clue board Director." }
+    ],
+    "director": [
+      { "trigger": "case_start", "text": "Dua pernyataan menunggu. Baca dulu, lalu tarik satu kartu ke kartu lain untuk menggabungkan." },
+      { "trigger": "first_clue", "text": "Clue Card masuk ke papan. Gabungkan dua kartu untuk melahirkan Deduksi." },
+      { "trigger": "gate_open", "text": "Gerbang terbuka. Tandai Kontradiksi lebih dulu, lalu isi form tuduhan." }
+    ]
+  }
+}
