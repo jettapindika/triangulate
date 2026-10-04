@@ -14,7 +14,7 @@ Ringkas keadaan hari ini: repo punya **0 required status check**, dan `main` **t
 | Pertanyaan | Jawaban |
 |---|---|
 | Apakah pipeline ini sudah berjalan? | **Belum.** Berkas workflow ada di repo, tetapi setiap job berguard `if: vars.CI_ENABLED == 'true'` dan repository variable `CI_ENABLED` **belum ada** (`gh api repos/.../actions/variables` → `{"total_count": 0}`). |
-| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati pada tiga run nyata**, bukan lagi dugaan. Run `37198053872` (`event: pull_request`, `head_sha: 05caefc`), `37198920839` (`head_sha: 5f33c74`), dan `37199828835` (`head_sha: 5c51f9e`) semuanya `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rincian di §4.7. |
+| Apa yang terjadi kalau PR dibuka sekarang? | **Sudah teramati pada empat run nyata**, bukan lagi dugaan. Run `37198053872` (`event: pull_request`, `head_sha: 05caefc`), `37198920839` (`head_sha: 5f33c74`), `37199828835` (`head_sha: 5c51f9e`), dan `37199941109` (`head_sha: d748054`) semuanya `conclusion: skipped`; keempat job `lint`, `analyze`, `test`, `validate-case` masing-masing `skipped` dengan **`steps: 0`**. Tidak ada check yang gagal, dan tidak ada menit yang terpakai. Rincian di §4.7. |
 | Apakah PR jadi terblokir? | **Tidak**, dan itu disengaja. Required status check belum dipasang (§5), jadi `skipped` tidak menghalangi merge. Ini mencegah pipeline baru memblokir PR-PR yang sudah terbuka saat workflow ini mendarat. |
 | Kapan ia mulai bekerja? | Setelah owner menjalankan satu perintah aktivasi di §5.1. |
 | Apakah ini "sudah ada CI"? | **Belum.** Yang ada adalah **usulan yang inert**. Sampai `CI_ENABLED` diset dan PR-nya di-merge, repo tetap tanpa CI. |
@@ -407,7 +407,7 @@ Konsekuensi praktis: **workflow `pull_request` yang tidak terpicu pada PR yang s
 
 Satu bagian yang **TIDAK TERVERIFIKASI**: run `37198053872` (`head_sha 05caefc`) terpicu pada 11:14 UTC, ketika `main` sudah bergerak melewati commit basis PR. Saya tidak dapat menjelaskan mengapa run itu masih muncul pada saat PR sudah tidak lagi mergeable; yang bisa saya pastikan hanya bahwa run-run sesudahnya berhenti sampai rebase selesai. Yang memverifikasi: perilaku ini tidak berdampak pada hasil akhir, karena keempat job-nya `skipped` dan setelah rebase trigger kembali normal.
 
-Kelima run yang tercatat sampai 2026-10-04 11:45Z, semuanya `conclusion: skipped` dengan `steps: 0`:
+Keenam run yang tercatat sampai 2026-10-04 11:50Z, semuanya `conclusion: skipped` dengan `steps: 0`:
 
 | Run id | event | `head_sha` | jobs |
 |---|---|---|---|
@@ -416,6 +416,7 @@ Kelima run yang tercatat sampai 2026-10-04 11:45Z, semuanya `conclusion: skipped
 | `37198702395` | `workflow_dispatch` | `e1716b2` | 4 job `skipped`, `steps: 0` |
 | `37198920839` | `pull_request` | `5f33c74` | 4 job `skipped`, `steps: 0` |
 | `37199828835` | `pull_request` | `5c51f9e` | 4 job `skipped`, `steps: 0` |
+| `37199941109` | `pull_request` | `d748054` | 4 job `skipped`, `steps: 0` |
 
 Dua run `workflow_dispatch` adalah **tindakan Devan** saat menelusuri anomali di atas, bukan bukti CI berjalan. Keduanya juga `skipped` karena `CI_ENABLED` tetap kosong. Run `37199828835` muncul setelah commit dokumen terakhir di-push, jadi trigger `pull_request` memang kembali normal pasca-rebase.
 
