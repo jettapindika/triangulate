@@ -9,7 +9,7 @@ Paket ini **mengisi** prosedur yang sudah ada, tidak menyusun ulang:
 | [`skrip-sesi.md`](skrip-sesi.md) | skrip pembuka, langkah A/B/C, lembar A1-A7 siap cetak | [SOP-04](../../sop/sop-04-playtest.md), [Lampiran A](../../sop/lampiran-a-instrumen-playtest.md) |
 | [`ekspor-telemetri.md`](ekspor-telemetri.md) | format ekspor mentah + cara menariknya | [skema-event-telemetri.md](../../metrics/skema-event-telemetri.md) |
 | [`lembar-hasil.md`](lembar-hasil.md) | lembar pengisian angka + keputusan gate | [kamus-metrik.md](../../metrics/kamus-metrik.md), [metrics.json](../../metrics.json) |
-| [`laporan.md`](laporan.md) | laporan terukur: instrumen, celah, evaluasi gate, tuning | semua di atas |
+| [`laporan.md`](laporan.md) | laporan terukur: validasi instrumen, celah, evaluasi gate, tuning before/after | semua di atas |
 
 Alat yang membaca hasilnya:
 
