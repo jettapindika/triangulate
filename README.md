@@ -4,6 +4,7 @@ Co-op Puzzle Mystery (working title) — game co-op asimetris 3 pemain di Roblox
 
 - PRD: `docs/prd-v0.2.md`
 - Spesifikasi otomasi (usulan, belum diaktifkan): `docs/automation-spec.md`
+- SOP produksi & playtest (draf, belum terbit): `docs/sop/README.md`
 - Arsitektur teknis: `docs/arsitektur.md`
 - Skema data kasus: `docs/case-schema.md`
 - Rencana spike minggu 0: `docs/spike-minggu-0.md`
