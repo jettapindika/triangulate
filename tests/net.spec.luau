@@ -80,4 +80,22 @@ for _, name in Net.REMOTE_NAMES do
 	Harness.check(outbound or inbound, string.format("remote %s punya arah", name))
 	Harness.check(not (outbound and inbound), string.format("remote %s tidak dua arah", name))
 end
+
+-- Arah yang menyebut nama di luar `REMOTE_NAMES` tidak pernah dibuat server:
+-- `init.server.luau` membuat RemoteEvent dari daftar itu, sehingga handler yang
+-- memasang `OnServerEvent` pada nama seperti itu mengindeks `nil` dan seluruh
+-- start server gagal. Diperiksa arah -> daftar, bukan hanya daftar -> arah,
+-- karena hanya arah yang bisa menambah nama baru.
+for name in Net.SERVER_TO_CLIENT do
+	Harness.check(
+		names[name] == true,
+		string.format("server->client %s terdaftar di REMOTE_NAMES", name)
+	)
+end
+for name in Net.CLIENT_TO_SERVER do
+	Harness.check(
+		names[name] == true,
+		string.format("client->server %s terdaftar di REMOTE_NAMES", name)
+	)
+end
 Harness.finish("net")

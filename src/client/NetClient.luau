@@ -13,6 +13,7 @@
 local NetClient = {}
 
 export type Bound = {
+	LobbyState: RemoteEvent,
 	SessionState: RemoteEvent,
 	ClueCard: RemoteEvent,
 	TargetMarker: RemoteEvent,
@@ -35,6 +36,9 @@ export type Bound = {
 	Inspect: RemoteEvent,
 	ContradictionResult: RemoteEvent,
 	TablePreview: RemoteEvent,
+	SubmitPreferences: RemoteEvent,
+	SetReady: RemoteEvent,
+	RequestSwap: RemoteEvent,
 }
 
 -- Menunggu seluruh remote muncul. Dipanggil sekali di awal; kalau salah satu
@@ -48,6 +52,7 @@ function NetClient.bind(shared: Instance): Bound
 	end
 
 	return {
+		LobbyState = waitFor("LobbyState"),
 		SessionState = waitFor("SessionState"),
 		ClueCard = waitFor("ClueCard"),
 		TargetMarker = waitFor("TargetMarker"),
@@ -70,6 +75,9 @@ function NetClient.bind(shared: Instance): Bound
 		Inspect = waitFor("Inspect"),
 		ContradictionResult = waitFor("ContradictionResult"),
 		TablePreview = waitFor("TablePreview"),
+		SubmitPreferences = waitFor("SubmitPreferences"),
+		SetReady = waitFor("SetReady"),
+		RequestSwap = waitFor("RequestSwap"),
 	}
 end
 
@@ -156,6 +164,33 @@ end
 -- `contradictions_marked` bertambah di `session_state`.
 function NetClient.markContradiction(bound: Bound, statementId: string): ()
 	bound.MarkContradiction:FireServer({ statement_id = statementId })
+end
+
+-- PRD §3, §8: dua preferensi role, urut prioritas, dikirim SEBELUM matchmaking.
+--
+-- Yang dikirim hanya daftar role, bukan hasil penugasan: server yang menetapkan
+-- role setelah preferensi semua pemain terkumpul. Mengirim role yang diinginkan
+-- sebagai klaim tidak memberi keuntungan apa pun -- server tetap bisa menolak.
+function NetClient.submitPreferences(bound: Bound, preferences: { string }): ()
+	bound.SubmitPreferences:FireServer(preferences)
+end
+
+-- PRD §8: ready check 10 detik. Pemain yang tidak siap diganti NPC.
+--
+-- Client hanya menyatakan niatnya; server yang memutuskan kapan hitungan mulai
+-- dan siapa yang benar-benar siap.
+function NetClient.setReady(bound: Bound, ready: boolean): ()
+	bound.SetReady:FireServer(ready)
+end
+
+-- PRD §8: "Pemain boleh tukar role di lobby (saling setuju)." Yang dikirim
+-- hanya id pemain tujuan.
+--
+-- Persetujuannya bukan di sini: server menyimpan permintaan yang belum dijawab
+-- dan baru menukar role saat pihak lain meminta arah sebaliknya
+-- (`LobbyFlow.requestSwap`). Client tidak bisa menukar role sepihak.
+function NetClient.requestSwap(bound: Bound, targetUserId: number): ()
+	bound.RequestSwap:FireServer(targetUserId)
 end
 
 return NetClient

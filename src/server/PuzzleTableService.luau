@@ -270,6 +270,53 @@ function PuzzleTableService.firstAvailable(
 end
 
 --[[
+	Meja pertama yang belum selesai DAN node-nya sudah terbuka.
+
+	Berbeda dari `firstAvailable` yang memeriksa `needs` lewat `isUnlocked`:
+	di sini "terbuka" datang dari pemanggil sebagai himpunan node id. Dipakai
+	glue untuk NPC Handler, yang berjalan tanpa pemain: ia harus merakit bukti
+	yang kuncinya sudah didapat, dan itu hanya diketahui server (peta kunci ->
+	evidence), bukan dari `needs` yang masih berbentuk nama kunci.
+
+	Urutannya `order`, sama seperti `firstAvailable`, supaya pilihannya
+	deterministik dan kedua fungsi tidak bisa berbeda pendapat soal "pertama".
+]]
+function PuzzleTableService.firstUnlocked(service: Service, unlocked: { [string]: boolean }): Entry?
+	for _, nodeId in service.order do
+		local entry = service.entries[nodeId]
+		if entry ~= nil and not entry.solved and unlocked[nodeId] == true then
+			return entry
+		end
+	end
+	return nil
+end
+
+--[[
+	Penempatan berikutnya untuk sebuah meja, tanpa manusia: `(piece_id, u, v)`
+	atau `nil` bila tidak ada potongan tersisa.
+
+	`u`/`v` adalah pusat sel tujuan yang dinormalkan ke bidang meja, yaitu
+	bentuk yang diterima `applyDrop`. Karena potongan yang belum terpasang
+	disimpan dalam urutan `state.pieces`, satu panggilan memajukan progres tepat
+	satu potongan -- itu yang membuat NPC Handler "merakit dengan kecepatan
+	lambat" (PRD §8) bisa diuji per langkah, bukan per detik.
+
+	Potongan yang sudah terpasang dilewati; meja selesai mengembalikan `nil`,
+	sehingga pemanggil berhenti karena datanya habis, bukan karena hitungan.
+]]
+function PuzzleTableService.nextPlacement(entry: Entry): (string?, number?, number?)
+	local board = entry.state.board
+	for _, piece in entry.state.pieces do
+		if not piece.placed then
+			local u = (piece.target.col + 0.5) / board.cols
+			local v = (piece.target.row + 0.5) / board.rows
+			return piece.id, u, v
+		end
+	end
+	return nil, nil, nil
+end
+
+--[[
 	Gerbang role untuk penempatan potongan.
 
 	Handler adalah pemilik meja (PRD §3: "Handler merekonstruksi bukti di meja

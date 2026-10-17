@@ -14,6 +14,14 @@
 -- sengaja tidak digabung ke HUD: keduanya menempati layar penuh, dan `Table`
 -- memindahkan kamera.
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+-- Daftar role untuk pemilih preferensi di lobby (PRD §3, §8). Diambil dari
+-- modul bersama supaya tidak ada salinan kedua yang bisa menyimpang.
+local Roles = require(Shared.Roles)
+
 local PingWheel = require(script.PingWheel)
 
 local Hud = {}
@@ -103,6 +111,17 @@ export type State = {
 	-- dipasang sebagai marker, karena Handler tahu apa yang harus dicari
 	-- sebelum Searcher tahu di mana mencarinya.
 	briefingTarget: string?,
+	-- PRD §3, §8: status lobby. `lobbyPhase` terpisah dari `phase` di atas --
+	-- yang itu fase sesi, yang ini "waiting" | "ready_check". `lobbyPreferences`
+	-- dan `lobbyReady` boleh `nil`: `LobbyFlow.snapshot` hanya mengisinya untuk
+	-- pemain yang benar-benar ada di lobby.
+	lobbyPhase: string?,
+	lobbySecondsLeft: number?,
+	lobbyPlayerCount: number?,
+	lobbyReadyCount: number?,
+	lobbyMaxPlayers: number?,
+	lobbyPreferences: { string }?,
+	lobbyReady: boolean?,
 }
 
 -- PRD §5: tiga field tuduhan, dan daftar kandidatnya di `accusation_options`.
@@ -187,6 +206,11 @@ function Hud.mount(
 		onReport: ((string) -> ())?,
 		onSetTarget: ((string) -> ())?,
 		onAccuse: (({ [string]: string }) -> ())?,
+		-- PRD §3, §8: aksi fase lobby. Sama polanya dengan yang di atas --
+		-- HUD hanya melaporkan niat, server yang memutuskan hasilnya.
+		onSubmitPreferences: (({ string }) -> ())?,
+		onSetReady: ((boolean) -> ())?,
+		onRequestSwap: ((number) -> ())?,
 	}
 ): {
 	update: (State) -> (),
@@ -196,6 +220,8 @@ function Hud.mount(
 	showMarker: ({ [string]: any }) -> (),
 	showReport: ({ [string]: any }) -> (),
 	showPing: (string, string) -> (),
+	updateLobby: ({ [string]: any }) -> (),
+	hideLobby: () -> (),
 }
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "TriangulateHud"
@@ -611,6 +637,308 @@ function Hud.mount(
 		end
 	end)
 
+	-- PRD §3, §8: layar lobby -- dua preferensi role, tombol siap, hitungan
+	-- pemain, hitungan waktu, dan tukar role. Semua kontrolnya tombol: PRD §2
+	-- "Cukup sentuh, tidak harus ketik". Ukurannya mengikuti `docs/art/ui-spec.md`
+	-- §2, layar 5: baris role 62, aksi utama 56, jarak antar target 8.
+	local LOBBY_WIDTH = 460
+	local LOBBY_ROW = 62
+	local LOBBY_ACTION = 56
+	local LOBBY_GAP = 8
+
+	local lobby =
+		panel(gui, "Lobby", UDim2.new(0.5, -230, 0.5, -310), UDim2.fromOffset(LOBBY_WIDTH, 620))
+	-- Di atas panel status dan toast: selama fase lobby, panel ini yang utama.
+	lobby.ZIndex = 12
+	lobby.Visible = false
+
+	local lobbyTitle = label(lobby, "Title", 24, COLORS.accent)
+	lobbyTitle.Text = "Lobby"
+	lobbyTitle.Position = UDim2.fromOffset(0, 0)
+	lobbyTitle.Size = UDim2.new(1, 0, 0, 30)
+
+	local lobbyCount = label(lobby, "Count", 15, COLORS.muted)
+	lobbyCount.Position = UDim2.fromOffset(0, 34)
+	lobbyCount.Size = UDim2.new(1, 0, 0, 20)
+
+	local lobbyTimer = label(lobby, "Timer", 20, COLORS.text)
+	lobbyTimer.Position = UDim2.fromOffset(0, 56)
+	lobbyTimer.Size = UDim2.new(1, 0, 0, 26)
+
+	local lobbyRolesTitle = label(lobby, "RolesTitle", 13, COLORS.muted)
+	lobbyRolesTitle.Text = "Pilih 2 preferensi role"
+	lobbyRolesTitle.Position = UDim2.fromOffset(0, 90)
+	lobbyRolesTitle.Size = UDim2.new(1, 0, 0, 18)
+
+	-- PRD §3: satu kalimat per role, supaya pemain baru tahu apa yang ia pilih
+	-- tanpa membuka apa pun.
+	local ROLE_DESCRIPTIONS = {
+		Searcher = "Jelajah lokasi, temukan objek",
+		Handler = "Rekonstruksi bukti di meja",
+		Director = "Gabungkan clue, tuduh pelaku",
+	}
+
+	-- Satu baris per role, seluruh baris bisa disentuh -- bentuk yang sama
+	-- dengan mockup layar 5. Anak-anaknya label, jadi ketukan tetap jatuh ke
+	-- tombolnya.
+	type RoleRow = {
+		button: TextButton,
+		badge: TextLabel,
+		stroke: UIStroke,
+		name: TextLabel,
+		status: TextLabel,
+	}
+	local roleRows: { [string]: RoleRow } = {}
+
+	for index, role in Roles.ALL do
+		local button = Instance.new("TextButton")
+		button.Name = role
+		button.Text = ""
+		button.BackgroundColor3 = COLORS.background
+		button.BorderSizePixel = 0
+		button.Position = UDim2.fromOffset(0, 110 + (index - 1) * (LOBBY_ROW + LOBBY_GAP))
+		button.Size = UDim2.new(1, 0, 0, LOBBY_ROW)
+		button.Parent = lobby
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 12)
+		corner.Parent = button
+
+		local badge = label(button, "Badge", 13, COLORS.muted)
+		badge.Text = tostring(index)
+		badge.TextXAlignment = Enum.TextXAlignment.Center
+		badge.TextYAlignment = Enum.TextYAlignment.Center
+		badge.Position = UDim2.fromOffset(12, 18)
+		badge.Size = UDim2.fromOffset(26, 26)
+
+		local badgeCorner = Instance.new("UICorner")
+		badgeCorner.CornerRadius = UDim.new(0.5, 0)
+		badgeCorner.Parent = badge
+
+		local badgeStroke = Instance.new("UIStroke")
+		badgeStroke.Color = COLORS.muted
+		badgeStroke.Thickness = 1
+		badgeStroke.Parent = badge
+
+		local name = label(button, "Name", 14, COLORS.text)
+		name.Font = Enum.Font.GothamBold
+		name.Text = role
+		name.Position = UDim2.fromOffset(48, 8)
+		name.Size = UDim2.new(1, -200, 0, 20)
+
+		local desc = label(button, "Desc", 11, COLORS.muted)
+		desc.Text = ROLE_DESCRIPTIONS[role] or role
+		desc.Position = UDim2.fromOffset(48, 28)
+		desc.Size = UDim2.new(1, -200, 0, 18)
+
+		local status = label(button, "Status", 11, COLORS.muted)
+		status.TextXAlignment = Enum.TextXAlignment.Right
+		status.TextYAlignment = Enum.TextYAlignment.Center
+		status.Position = UDim2.new(1, -140, 0, 0)
+		status.Size = UDim2.fromOffset(128, LOBBY_ROW)
+
+		roleRows[role] =
+			{ button = button, badge = badge, stroke = badgeStroke, name = name, status = status }
+	end
+
+	local lobbyPrefs = label(lobby, "Prefs", 13, COLORS.muted)
+	lobbyPrefs.Position = UDim2.fromOffset(0, 322)
+	lobbyPrefs.Size = UDim2.new(1, 0, 0, 18)
+
+	local readyButton = Instance.new("TextButton")
+	readyButton.Name = "Ready"
+	readyButton.Text = "Siap, mulai kasus"
+	readyButton.TextSize = 20
+	readyButton.Font = Enum.Font.GothamBold
+	readyButton.TextColor3 = COLORS.background
+	readyButton.BackgroundColor3 = COLORS.accent
+	readyButton.BorderSizePixel = 0
+	readyButton.Position = UDim2.fromOffset(0, 524)
+	readyButton.Size = UDim2.new(1, 0, 0, LOBBY_ACTION)
+	readyButton.Parent = lobby
+
+	local readyCorner = Instance.new("UICorner")
+	readyCorner.CornerRadius = UDim.new(0, 12)
+	readyCorner.Parent = readyButton
+
+	local swapTitle = label(lobby, "SwapTitle", 13, COLORS.muted)
+	swapTitle.Position = UDim2.fromOffset(0, 350)
+	swapTitle.Size = UDim2.new(1, 0, 0, 18)
+
+	-- PRD §8: tukar role butuh persetujuan dua pihak, jadi yang dikirim hanya
+	-- permintaan ke satu pemain. Dua baris cukup: `Config.MAX_PLAYERS` = 3,
+	-- jadi lawan tukar paling banyak dua.
+	local swapRows: { TextButton } = {}
+	local swapTargets: { number? } = { nil, nil }
+
+	for index = 1, 2 do
+		local row = Instance.new("TextButton")
+		row.Name = string.format("Swap%d", index)
+		row.TextSize = 14
+		row.TextWrapped = true
+		row.Font = Enum.Font.GothamBold
+		row.TextColor3 = COLORS.text
+		row.BackgroundColor3 = COLORS.background
+		row.BorderSizePixel = 0
+		row.Position = UDim2.fromOffset(0, 376 + (index - 1) * (LOBBY_ROW + LOBBY_GAP))
+		row.Size = UDim2.new(1, 0, 0, LOBBY_ROW)
+		row.Visible = false
+		row.Parent = lobby
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 12)
+		corner.Parent = row
+
+		row.Activated:Connect(function()
+			local target = swapTargets[index]
+			if target == nil then
+				return
+			end
+
+			local requestSwap = handlers.onRequestSwap
+			if requestSwap ~= nil then
+				requestSwap(target)
+			end
+		end)
+
+		swapRows[index] = row
+	end
+
+	local function refreshSwap(): ()
+		local index = 0
+		for _, other in Players:GetPlayers() do
+			if other ~= player and index < #swapRows then
+				index += 1
+				local row = swapRows[index]
+				row.Text = string.format("Tukar dengan %s", other.DisplayName)
+				row.Visible = true
+				swapTargets[index] = other.UserId
+			end
+		end
+
+		for position = index + 1, #swapRows do
+			swapRows[position].Visible = false
+			swapTargets[position] = nil
+		end
+
+		swapTitle.Text = if index == 0
+			then "Menunggu pemain lain"
+			else "Tukar role dengan pemain lain"
+	end
+
+	local function refreshLobby(): ()
+		lobbyCount.Text = string.format(
+			"Pemain %d/%d - siap %d",
+			state.lobbyPlayerCount or 0,
+			state.lobbyMaxPlayers or 0,
+			state.lobbyReadyCount or 0
+		)
+
+		local phase = state.lobbyPhase
+		local left = state.lobbySecondsLeft
+		if phase == "ready_check" then
+			lobbyTimer.Text = string.format("Siap dalam %d dtk", math.max(0, left or 0))
+		elseif phase == "waiting" then
+			lobbyTimer.Text = string.format("Menunggu pemain: %d dtk", math.max(0, left or 0))
+		else
+			lobbyTimer.Text = ""
+		end
+
+		local chosen = state.lobbyPreferences
+		for index, role in Roles.ALL do
+			local row = roleRows[role]
+			local order = if chosen ~= nil then table.find(chosen, role) else nil
+			local picked = order ~= nil
+
+			row.badge.TextColor3 = if picked then COLORS.background else COLORS.muted
+			row.badge.BackgroundColor3 = if picked then COLORS.accent else COLORS.background
+			row.badge.BackgroundTransparency = if picked then 0 else 1
+			row.stroke.Transparency = if picked then 1 else 0
+			row.name.TextColor3 = if picked then COLORS.accent else COLORS.text
+			row.status.TextColor3 = if picked then COLORS.accent else COLORS.muted
+			row.status.Text = if picked then string.format("Prioritas %d", order) else "Tersedia"
+			row.button.BackgroundColor3 = if picked then COLORS.panel else COLORS.background
+
+			-- Angka di badge tetap nomor baris, bukan prioritas: urutan baris
+			-- tidak berubah saat pemain memilih, jadi angkanya tidak melompat.
+			row.badge.Text = tostring(index)
+		end
+
+		lobbyPrefs.Text = if chosen == nil or #chosen == 0
+			then "Belum ada pilihan. Ketuk sampai dua role."
+			else "Pilihanmu: " .. table.concat(chosen, " lalu ")
+
+		local ready = state.lobbyReady == true
+		readyButton.Text = if ready then "Siap - ketuk untuk batal" else "Siap, mulai kasus"
+		readyButton.BackgroundColor3 = if ready then COLORS.muted else COLORS.accent
+		readyButton.TextColor3 = if ready then COLORS.panel else COLORS.background
+	end
+
+	-- `state` ditulis optimistis lalu ditimpa snapshot berikutnya. Tanpa itu,
+	-- dua ketukan cepat sebelum balasan server datang dihitung dari pilihan
+	-- lama, dan ketukan pertama hilang.
+	local function chooseRole(role: string): ()
+		local next_ = table.clone(state.lobbyPreferences or {})
+
+		local position = table.find(next_, role)
+		if position ~= nil then
+			table.remove(next_, position)
+		elseif #next_ >= Roles.PREFERENCE_COUNT then
+			-- Dua preferensi sudah penuh. Menekan role ketiga tidak menggeser
+			-- yang sudah dipilih -- pemain membatalkan dulu salah satunya.
+			return
+		else
+			table.insert(next_, role)
+		end
+
+		state.lobbyPreferences = next_
+		refreshLobby()
+
+		local submit = handlers.onSubmitPreferences
+		if submit ~= nil then
+			submit(next_)
+		end
+	end
+
+	for _, role in Roles.ALL do
+		roleRows[role].button.Activated:Connect(function()
+			chooseRole(role)
+		end)
+	end
+
+	readyButton.Activated:Connect(function()
+		-- Yang dikirim adalah keadaan yang DIINGINKAN, dibalik dari status
+		-- terakhir -- ditulis optimistis dengan alasan yang sama seperti role.
+		local wanted = state.lobbyReady ~= true
+		state.lobbyReady = wanted
+		refreshLobby()
+
+		local setReady = handlers.onSetReady
+		if setReady ~= nil then
+			setReady(wanted)
+		end
+	end)
+
+	local function updateLobby(payload: { [string]: any }): ()
+		state.lobbyPhase = payload.phase
+		state.lobbySecondsLeft = payload.seconds_left
+		state.lobbyPlayerCount = payload.player_count
+		state.lobbyReadyCount = payload.ready_count
+		state.lobbyMaxPlayers = payload.max_players
+		state.lobbyPreferences = if type(payload.preferences) == "table"
+			then table.clone(payload.preferences)
+			else nil
+		state.lobbyReady = payload.ready
+
+		lobby.Visible = true
+		refreshSwap()
+		refreshLobby()
+	end
+
+	local function hideLobby(): ()
+		lobby.Visible = false
+	end
+
 	local wheel: Frame? = nil
 	-- Role yang dipakai roda saat ini dibangun. Disimpan terpisah dari
 	-- `state.role` supaya roda dibangun ULANG saat role baru tiba -- kalau
@@ -741,6 +1069,8 @@ function Hud.mount(
 		showMarker = showMarker,
 		showReport = showReport,
 		showPing = showPing,
+		updateLobby = updateLobby,
+		hideLobby = hideLobby,
 	}
 end
 

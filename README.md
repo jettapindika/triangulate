@@ -46,6 +46,9 @@ src/server/              ServerScriptService -- tidak pernah direplikasi
   RoleAssignment.luau    Penetapan role + prioritas keadilan
   Matchmaking.luau       Lobby, ready check, batas waktu
   NPCController.luau     Pengambilalihan AFK, aksi NPC
+  LobbyFlow.luau         Fase lobby: waiting, ready check, swap, snapshot
+  SessionPresence.luau   AFK, disconnect, penahanan slot rejoin
+  FriendSession.luau     Reserved server + TeleportService untuk sesi teman
   TelemetryService.luau  Idle time, waktu ke clue pertama
 
 src/client/              StarterPlayerScripts
@@ -67,6 +70,7 @@ data/cases/              Di-mount ke ServerStorage.Cases
 tools/                   Alat CLI
   validate_case.luau     Validator kasus; exit 1 bila ada yang gagal
   bukti-rantai-a.luau    Bukti rantai A->bukti end to end + uji kebocoran
+  simulate_lobby.luau    Urutan lobby 3 pemain (NPC, AFK, disconnect, rejoin)
 
 tests/                   Uji CLI via Lune (satu pintu: tests/run.luau)
   run.luau               Runner
@@ -88,7 +92,7 @@ graf clue, telemetri, proyeksi Net) adalah modul murni yang **tidak menyentuh
 global Roblox**, sehingga bisa diuji dari CLI tanpa Studio:
 
 ```sh
-lune run tests/run.luau                        # 1099 assertion, 20 berkas spec
+lune run tests/run.luau                        # 1332 assertion, 24 berkas spec
 selene --config selene.toml .                  # lint
 stylua --config-path stylua.toml --check .     # format
 ```
@@ -111,12 +115,15 @@ luau-analyze --mode=strict \
   src/server/AccusationService.luau src/server/AccusationGate.luau \
   src/server/DeductionEngine.luau src/server/ClueGraph.luau \
   src/server/TelemetryService.luau src/server/NPCController.luau \
-  src/server/PuzzleTableService.luau src/server/LocationService.luau
+  src/server/PuzzleTableService.luau src/server/LocationService.luau \
+  src/server/SessionPresence.luau src/server/FriendSession.luau
 ```
 
 `src/shared/case/Compat.luau` tidak ikut: ia ditandai `--!nocheck`, jadi
 "lulus" di sana bukan hasil pemeriksaan. `CaseSource` juga tidak ikut karena
-menyentuh `Instance`.
+menyentuh `Instance`. `LobbyFlow` tidak ikut karena `require`-nya dinamis
+(`script.Matchmaking` di Roblox, `./Matchmaking` di CLI) — sama alasannya
+dengan `Compat`.
 
 Pemeriksaan tipe untuk berkas yang menyentuh API Roblox butuh `luau-lsp` dengan
 `sourcemap.json` dari `rojo sourcemap`. Itu bagian dari EXTA-34.
@@ -136,14 +143,17 @@ rojo serve
 
 ## Yang belum ada
 
-Scaffold ini berjalan sampai minggu 3 dari PRD §17. Yang **belum** terpasang,
+Scaffold ini berjalan sampai minggu 5 dari PRD §17. Yang **belum** terpasang,
 dengan nomor minggunya:
 
 | Belum | Minggu (PRD §17) |
 |---|---|
-| Pemisahan info per role end to end, tuduhan + batas percobaan di UI | 4 |
-| Lobby lengkap, preferensi role, NPC, AFK/rejoin | 5 |
 | Case 0, story case #1, ping wheel final | 6 |
+
+Minggu 0–5 sudah terpasang: meja puzzle + drag-and-snap, satu lokasi + objek +
+mini-aksi, clue board Director + kombinasi + kontradiksi + pinpoint + form
+tuduhan, pemisahan info per role, dan lobby (2 preferensi role, ready check,
+NPC Searcher/Handler, AFK takeover, rejoin).
 
 Utang yang sudah diketahui dari minggu 3, dengan alasan masing-masing:
 
