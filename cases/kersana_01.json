@@ -1,0 +1,491 @@
+{
+  "schema_version": "1.1",
+  "case_id": "kersana_01",
+  "title": "Kotak Musik yang Bisu",
+  "kind": "story",
+  "chapter": 1,
+  "theme": "pemalsuan dan sabotase",
+  "content_rating": "13+ (non-gore)",
+  "source": "PRD v0.2 bagian 3, 4, 5, 6, 7, 10",
+  "location": {
+    "id": "kersana_workshop",
+    "name": "Toko dan Bengkel Kersana",
+    "areas": [
+      { "id": "ruang_depan", "name": "Ruang Depan Toko" },
+      { "id": "bengkel", "name": "Meja Kerja Bengkel" },
+      { "id": "gudang", "name": "Gudang Belakang" }
+    ]
+  },
+  "incident": "Kotak musik pesanan nomor 27 untuk Bu Ratih seharusnya diserahkan Sabtu pagi. Saat dites Jumat malam, kotaknya bisu: jam pemutar kuningan di dalamnya sudah diganti unit rusak.",
+  "cast": [
+    { "id": "pak_kersana", "name": "Pak Kersana", "peran": "pemilik bengkel" },
+    { "id": "rani", "name": "Rani", "peran": "perakit kotak musik" },
+    { "id": "bowo", "name": "Bowo", "peran": "kurir" },
+    { "id": "bu_ratih", "name": "Bu Ratih", "peran": "pemesan kotak 27" }
+  ],
+  "gate": {
+    "total_deductions": 6,
+    "key_deductions_required": 4,
+    "min_contradictions": 1,
+    "accusation_attempts": 3,
+    "confirmation_roles": 1,
+    "feedback": "Hanya jumlah field yang benar, tidak menyebut field mana",
+    "source": "PRD v0.2 bagian 5: N = 4 dari 6 untuk kasus standar (3 rantai x 2 deduksi)"
+  },
+  "variants": [
+    {
+      "id": "v_rani",
+      "culprit": "rani",
+      "motive": "utang"
+    },
+    {
+      "id": "v_bowo",
+      "culprit": "bowo",
+      "motive": "dendam"
+    }
+  ],
+  "shared_assets": {
+    "note": "Kedua varian memakai lokasi, node, puzzle, dan sheet gambar yang sama. Yang berbeda hanya teks payload pada clue_c1, clue_c2, dan statements; mesin memilih satu varian saat sesi dibuat. Karena saksi yang berbohong berbeda per varian, kunci statements/contradictions/solution berada di dalam variant_content, bukan di root.",
+    "asset_sheets": [
+      "sheet_torn_doc_3x2",
+      "sheet_timeline_5",
+      "sheet_cipher_keypad",
+      "sheet_torn_doc_note",
+      "sheet_cipher_ledger",
+      "sheet_timeline_ledger"
+    ]
+  },
+  "briefings": {
+    "searcher": {
+      "tahu": "Kotak 27 diserahkan Sabtu pagi dan sekarang bisu. Tiga area bisa diperiksa: ruang depan, meja kerja bengkel, dan gudang belakang.",
+      "tidak_tahu": "Siapa yang mengganti isi kotak, dan kapan.",
+      "tugas_pertama": "Periksa buku pesanan di ruang depan, lalu tekan Report."
+    },
+    "handler": {
+      "tahu": "Enam kunci dari lokasi akan membuka enam potongan bukti di meja.",
+      "tidak_tahu": "Nama pelaku dan motifnya.",
+      "tugas_pertama": "Rakit sobekan buku pesanan begitu kunci pertama masuk."
+    },
+    "director": {
+      "tahu": "Ada tiga pernyataan saksi dan sebuah log akses bengkel.",
+      "tidak_tahu": "Pernyataan mana yang berbohong.",
+      "tugas_pertama": "Baca tiga pernyataan, lalu tunggu Clue Card pertama dari Handler."
+    }
+  },
+  "nodes": [
+    {
+      "id": "obj_buku_pesanan",
+      "type": "object",
+      "chain": "A",
+      "area": "ruang_depan",
+      "label": "Buku pesanan di konter",
+      "gives_key": "key_a1",
+      "mini_action": "hold",
+      "report_text": "Buku pesanan terbuka di halaman Jumat. Satu halaman sobek dan diselipkan di balik sampul."
+    },
+    {
+      "id": "ev_buku_pesanan",
+      "type": "evidence",
+      "chain": "A",
+      "puzzle": "torn_doc",
+      "puzzle_label": "Susun sobekan halaman pesanan",
+      "needs": ["key_a1"],
+      "yields": "clue_a1",
+      "asset_sheet": "sheet_torn_doc_3x2"
+    },
+    {
+      "id": "clue_a1",
+      "type": "clue",
+      "chain": "A",
+      "holder": "director",
+      "from": "ev_buku_pesanan"
+    },
+    {
+      "id": "obj_kartu_akses",
+      "type": "object",
+      "chain": "A",
+      "area": "bengkel",
+      "label": "Pembaca kartu akses bengkel",
+      "gives_key": "key_a2",
+      "mini_action": "senter_uv",
+      "report_text": "Layar pembaca kartu akses menampilkan tiga entri Jumat. Namanya tertulis dalam huruf acak."
+    },
+    {
+      "id": "ev_log_akses",
+      "type": "evidence",
+      "chain": "A",
+      "puzzle": "cipher",
+      "puzzle_label": "Baca log akses dengan kunci geser",
+      "needs": ["key_a2"],
+      "yields": "clue_a2",
+      "asset_sheet": "sheet_cipher_keypad"
+    },
+    {
+      "id": "clue_a2",
+      "type": "clue",
+      "chain": "A",
+      "holder": "director",
+      "from": "ev_log_akses"
+    },
+    {
+      "id": "obj_meja_kerja",
+      "type": "object",
+      "chain": "B",
+      "area": "bengkel",
+      "label": "Meja kerja bengkel",
+      "gives_key": "key_b1",
+      "mini_action": "hold",
+      "report_text": "Meja kerja rapi. Kamera pengawas bengkel menyimpan lima foto dari Jumat sore."
+    },
+    {
+      "id": "ev_foto_meja",
+      "type": "evidence",
+      "chain": "B",
+      "puzzle": "timeline",
+      "puzzle_label": "Urutkan lima foto meja kerja",
+      "needs": ["key_b1"],
+      "yields": "clue_b1",
+      "asset_sheet": "sheet_timeline_5"
+    },
+    {
+      "id": "clue_b1",
+      "type": "clue",
+      "chain": "B",
+      "holder": "director",
+      "from": "ev_foto_meja"
+    },
+    {
+      "id": "obj_kotak_alat",
+      "type": "object",
+      "chain": "B",
+      "area": "bengkel",
+      "label": "Kotak alat di bawah meja",
+      "gives_key": "key_b2",
+      "mini_action": "lockpick",
+      "report_text": "Kotak alat terkunci. Gemboknya sederhana, tapi set obeng di dalamnya tidak lengkap."
+    },
+    {
+      "id": "ev_catatan_bengkel",
+      "type": "evidence",
+      "chain": "B",
+      "puzzle": "torn_doc",
+      "puzzle_label": "Susun catatan bengkel yang sobek",
+      "needs": ["key_b2"],
+      "yields": "clue_b2",
+      "asset_sheet": "sheet_torn_doc_note"
+    },
+    {
+      "id": "clue_b2",
+      "type": "clue",
+      "chain": "B",
+      "holder": "director",
+      "from": "ev_catatan_bengkel"
+    },
+    {
+      "id": "obj_rak_gudang",
+      "type": "object",
+      "chain": "C",
+      "area": "gudang",
+      "label": "Rak arsip gudang",
+      "gives_key": "key_c1",
+      "mini_action": "hold",
+      "report_text": "Rak arsip gudang berdebu. Satu map kosong, satu lembar tertinggal di lantai."
+    },
+    {
+      "id": "ev_label_gudang",
+      "type": "evidence",
+      "chain": "C",
+      "puzzle": "cipher",
+      "puzzle_label": "Pecahkan kode pada lembar gudang",
+      "needs": ["key_c1"],
+      "yields": "clue_c1",
+      "asset_sheet": "sheet_cipher_ledger"
+    },
+    {
+      "id": "clue_c1",
+      "type": "clue",
+      "chain": "C",
+      "holder": "director",
+      "from": "ev_label_gudang"
+    },
+    {
+      "id": "obj_buku_besar",
+      "type": "object",
+      "chain": "C",
+      "area": "gudang",
+      "label": "Buku besar pengiriman",
+      "gives_key": "key_c2",
+      "mini_action": "senter_uv",
+      "report_text": "Buku besar pengiriman terbuka di halaman Kamis. Ada halaman tambahan yang disisipkan."
+    },
+    {
+      "id": "ev_buku_besar",
+      "type": "evidence",
+      "chain": "C",
+      "puzzle": "timeline",
+      "puzzle_label": "Urutkan catatan pengiriman Kamis sampai Jumat",
+      "needs": ["key_c2"],
+      "yields": "clue_c2",
+      "asset_sheet": "sheet_timeline_ledger"
+    },
+    {
+      "id": "clue_c2",
+      "type": "clue",
+      "chain": "C",
+      "holder": "director",
+      "from": "ev_buku_besar"
+    },
+    {
+      "id": "ded_pelaku_1",
+      "type": "deduction",
+      "chain": "A",
+      "field": "pelaku",
+      "key": true,
+      "needs": ["clue_a1", "clue_a2"],
+      "unlocks": ["pin_bengkel"]
+    },
+    {
+      "id": "ded_pelaku_2",
+      "type": "deduction",
+      "chain": "A",
+      "field": "pelaku",
+      "key": false,
+      "needs": ["clue_a2", "clue_c1"],
+      "unlocks": ["accusation_pelaku"]
+    },
+    {
+      "id": "ded_cara_1",
+      "type": "deduction",
+      "chain": "B",
+      "field": "cara",
+      "key": true,
+      "needs": ["clue_b1", "clue_b2"],
+      "unlocks": ["pin_meja_kerja"]
+    },
+    {
+      "id": "ded_cara_2",
+      "type": "deduction",
+      "chain": "B",
+      "field": "cara",
+      "key": false,
+      "needs": ["clue_b2", "clue_a1"],
+      "unlocks": ["pin_rak_2"]
+    },
+    {
+      "id": "ded_motif_1",
+      "type": "deduction",
+      "chain": "C",
+      "field": "motif",
+      "key": true,
+      "needs": ["clue_c1", "clue_c2"],
+      "unlocks": ["accusation_motif"]
+    },
+    {
+      "id": "ded_motif_2",
+      "type": "deduction",
+      "chain": "C",
+      "field": "motif",
+      "key": true,
+      "needs": ["clue_c2", "clue_b1"],
+      "unlocks": ["pin_gudang"]
+    }
+  ],
+  "shared_clue_text": {
+    "clue_a1": "Pesanan 27, kotak musik kayu jati untuk Bu Ratih. Masuk bengkel Jumat 18.20, dijadwalkan diserahkan Sabtu 08.00.",
+    "clue_a2": "Log akses bengkel Jumat: 17.10 Pak Kersana, 18.32 Rani, 19.47 Bowo.",
+    "clue_b1": "Foto 18.25 kotak 27 di meja kerja, tutup terpasang. 18.40 tutup terbuka. 18.55 kotak tertutup. 19.05 kotak dipindah ke rak 2. 19.50 rak 2 dibuka lalu ditutup rapat, ada kardus cokelat di lantai.",
+    "clue_b2": "Catatan bengkel Jumat pagi: set obeng lengkap, kepala bintang ada. Sore: kepala bintang tidak ditemukan. Goresan sekrup kotak 27 cocok dengan obeng bintang, bukan obeng pipih bengkel."
+  },
+  "variant_content": [
+    {
+      "id": "v_rani",
+      "clue_text": {
+        "clue_c1": "Nota gadai tertanggal Rabu: satu jam pemutar kuningan tanpa nomor seri, pelunasan jatuh tempo Senin. Inisial pemilik pada nota: 18-1-14-9.",
+        "clue_c2": "Pengiriman keluar kota Kamis 20.10: satu paket kecil berbungkus kain, berat 0.4 kg. Penerima tidak menuliskan nama."
+      },
+      "deduction_text": {
+        "ded_pelaku_1": "Kotak 27 hanya bisa dibuka di bengkel antara 18.20 dan 19.50. Dua orang masuk di jendela itu: Rani 18.32 dan Bowo 19.47.",
+        "ded_pelaku_2": "Nota gadai menyimpan kode 18-1-14-9, yang terbaca RANI. Dari dua nama di log akses, hanya Rani yang punya urusan dengan jam pemutar kuningan.",
+        "ded_cara_1": "Kotak dibuka 18.40 dan ditutup lagi 18.55. Sekrup penutup diganti memakai obeng bintang yang hilang dari kotak alat.",
+        "ded_cara_2": "Kotak 27 yang dipindah ke rak 2 pukul 19.05 sudah memakai sekrup bekas obeng bintang. Penggantian terjadi sebelum rak.",
+        "ded_motif_1": "Nota gadai dan paket keluar kota Kamis menunjuk barang yang sama: jam pemutar kuningan. Motifnya melunasi utang.",
+        "ded_motif_2": "Penerima paket tidak menuliskan nama, dan beratnya cocok dengan satu jam pemutar. Foto 19.50 memperlihatkan rak 2 dibuka lalu ditutup rapat, jadi barang itu keluar lewat pengiriman, bukan dijual di bengkel."
+      },
+      "statements": [
+        {
+          "id": "st_rani",
+          "who": "rani",
+          "text": "Aku menutup kotak 27 jam 18.25 dan tidak membukanya lagi. Setelah itu aku cuma merapikan rak.",
+          "lie": true,
+          "contradicted_by": "clue_b1"
+        },
+        {
+          "id": "st_bowo",
+          "who": "bowo",
+          "text": "Aku ke bengkel jam 19.47 cuma menaruh kardus di depan rak, tidak menyentuh kotak apa pun.",
+          "lie": false,
+          "contradicted_by": null
+        },
+        {
+          "id": "st_kersana",
+          "who": "pak_kersana",
+          "text": "Aku menutup toko jam 17.10 dan baru kembali Sabtu pagi.",
+          "lie": false,
+          "contradicted_by": null
+        }
+      ],
+      "contradictions": [
+        {
+          "id": "cont_rani_1",
+          "statement": "st_rani",
+          "contradicted_by": "clue_b1",
+          "required": true,
+          "reason": "Rani bilang tidak membuka kotak setelah 18.25, sedangkan foto 18.40 memperlihatkan tutup kotak 27 terbuka di meja kerja."
+        }
+      ],
+      "solution": {
+        "pelaku": "Rani",
+        "motif": "Melunasi utang gadai. Jam pemutar kuningan digadaikan Rabu dan paketnya dikirim keluar kota Kamis.",
+        "cara": "Membuka kotak 27 di meja kerja pukul 18.40, menukar jam pemutar kuningan dengan unit rusak, menutupnya lagi pukul 18.55, lalu memindahkan kotak ke rak 2 pukul 19.05."
+      }
+    },
+    {
+      "id": "v_bowo",
+      "clue_text": {
+        "clue_c1": "Surat pemutusan kontrak kurir, ditandatangani Pak Kersana bulan lalu. Nama penerima tercoret, nomor rute masih terbaca: rute 4. Inisial pada berkas: 2-15-23-15.",
+        "clue_c2": "Catatan pengiriman: rute 4 kosong sejak kontrak diputus, tiga paket dialihkan ke kurir lain. Di rak 2 ada kardus cokelat berisi jam pemutar kuningan terbungkus kain."
+      },
+      "deduction_text": {
+        "ded_pelaku_1": "Kotak 27 hanya bisa dibuka di bengkel antara 18.20 dan 19.50. Dua orang masuk di jendela itu: Rani 18.32 dan Bowo 19.47.",
+        "ded_pelaku_2": "Berkas gudang menyimpan kode 2-15-23-15, yang terbaca BOWO, dan menyebut rute 4. Dari dua nama di log akses, hanya Bowo yang terhubung dengan rute itu.",
+        "ded_cara_1": "Kotak dibuka 18.40 dan ditutup lagi 18.55. Sekrup penutup diganti memakai obeng bintang yang hilang dari kotak alat.",
+        "ded_cara_2": "Kotak 27 dipindah ke rak 2 pukul 19.05, lalu rak 2 dibuka lagi pukul 19.50. Sekrup bekas obeng bintang muncul di jendela kedua.",
+        "ded_motif_1": "Surat pemutusan kontrak dan rute 4 yang kosong menunjuk orang yang sama. Motifnya dendam setelah kontraknya diputus.",
+        "ded_motif_2": "Jam pemutar kuningan ditemukan terbungkus kain di kardus cokelat dekat rak 2, bukan dijual keluar."
+      },
+      "statements": [
+        {
+          "id": "st_bowo",
+          "who": "bowo",
+          "text": "Aku tidak pernah masuk bengkel Jumat malam. Kardusnya aku titip di ruang depan.",
+          "lie": true,
+          "contradicted_by": "clue_a2"
+        },
+        {
+          "id": "st_rani",
+          "who": "rani",
+          "text": "Aku menutup kotak 27 jam 18.55 dan menaruhnya di rak 2 pukul 19.05. Setelah itu aku pulang.",
+          "lie": false,
+          "contradicted_by": null
+        },
+        {
+          "id": "st_kersana",
+          "who": "pak_kersana",
+          "text": "Aku menutup toko jam 17.10 dan baru kembali Sabtu pagi.",
+          "lie": false,
+          "contradicted_by": null
+        }
+      ],
+      "contradictions": [
+        {
+          "id": "cont_bowo_1",
+          "statement": "st_bowo",
+          "contradicted_by": "clue_a2",
+          "required": true,
+          "reason": "Bowo bilang tidak pernah masuk bengkel, sedangkan log akses mencatat entri 19.47 atas namanya dan foto 19.50 memperlihatkan rak 2 dibuka."
+        }
+      ],
+      "solution": {
+        "pelaku": "Bowo",
+        "motif": "Dendam. Pak Kersana memutus kontraknya bulan lalu dan rute 4-nya dikosongkan; dia ingin pesanan kotak 27 gagal.",
+        "cara": "Masuk bengkel pukul 19.47, membuka rak 2 pukul 19.50, menukar jam pemutar kuningan dengan unit rusak dari rak gudang, lalu menutup rak rapat. Jam pemutar kuningan disembunyikan di kardus cokelat."
+      }
+    }
+  ],
+  "puzzle_content": {
+    "ev_buku_pesanan": {
+      "type": "torn_doc",
+      "grid": "3x2",
+      "pieces": [
+        { "slot": 1, "text": "Buku Pesanan Bengkel Kersana" },
+        { "slot": 2, "text": "Pesanan 27. Kotak musik, kayu jati." },
+        { "slot": 3, "text": "Pemesan: Bu Ratih." },
+        { "slot": 4, "text": "Masuk bengkel Jumat 18.20." },
+        { "slot": 5, "text": "Diserahkan Sabtu 08.00." },
+        { "slot": 6, "text": "Catatan: jam pemutar kuningan, pesanan khusus." }
+      ],
+      "reassembled": "Buku Pesanan Bengkel Kersana. Pesanan 27. Kotak musik, kayu jati. Pemesan: Bu Ratih. Masuk bengkel Jumat 18.20. Diserahkan Sabtu 08.00. Catatan: jam pemutar kuningan, pesanan khusus."
+    },
+    "ev_log_akses": {
+      "type": "cipher",
+      "method": "Caesar shift 3 (huruf digeser tiga ke depan)",
+      "key_from_searcher": "Catatan di dinding bengkel: 'geser tiga huruf'",
+      "ciphertext_lines": ["17.10 NHUVDQD", "18.32 UDQL", "19.47 ERZR"],
+      "plaintext_lines": ["17.10 KERSANA", "18.32 RANI", "19.47 BOWO"],
+      "extra": "Kolom waktu tidak disandikan. Hanya nama yang digeser."
+    },
+    "ev_foto_meja": {
+      "type": "timeline",
+      "cards": [
+        { "time": "18.25", "text": "Kotak 27 di meja kerja, tutup terpasang." },
+        { "time": "18.40", "text": "Tutup kotak 27 terbuka. Sebuah obeng tergeletak di meja." },
+        { "time": "18.55", "text": "Kotak 27 tertutup kembali." },
+        { "time": "19.05", "text": "Kotak 27 dipindah dari meja kerja ke rak 2." },
+        { "time": "19.50", "text": "Rak 2 dibuka lalu ditutup rapat. Kardus cokelat di lantai dekat rak." }
+      ],
+      "solution_order": ["18.25", "18.40", "18.55", "19.05", "19.50"]
+    },
+    "ev_catatan_bengkel": {
+      "type": "torn_doc",
+      "grid": "2x2",
+      "pieces": [
+        { "slot": 1, "text": "Catatan bengkel, Jumat pagi:" },
+        { "slot": 2, "text": "set obeng lengkap, kepala bintang ada." },
+        { "slot": 3, "text": "Sore: kepala bintang tidak ditemukan." },
+        { "slot": 4, "text": "Goresan sekrup kotak 27 cocok obeng bintang." }
+      ],
+      "reassembled": "Catatan bengkel, Jumat pagi: set obeng lengkap, kepala bintang ada. Sore: kepala bintang tidak ditemukan. Goresan sekrup kotak 27 cocok obeng bintang."
+    },
+    "ev_label_gudang": {
+      "type": "cipher",
+      "method": "A1Z26 (A=1 sampai Z=26)",
+      "key_from_searcher": "Sampul buku besar: 'A=1, B=2, sampai Z=26'",
+      "variant_ciphertext": {
+        "v_rani": ["18-1-14-9"],
+        "v_bowo": ["2-15-23-15"]
+      },
+      "variant_plaintext": {
+        "v_rani": ["RANI"],
+        "v_bowo": ["BOWO"]
+      }
+    },
+    "ev_buku_besar": {
+      "type": "timeline",
+      "cards_variant": {
+        "v_rani": [
+          { "time": "Rabu", "text": "Map arsip diambil dari rak gudang." },
+          { "time": "Kamis 20.10", "text": "Paket kecil berbungkus kain dikirim keluar kota." },
+          { "time": "Jumat 18.20", "text": "Kotak 27 masuk bengkel." }
+        ],
+        "v_bowo": [
+          { "time": "Bulan lalu", "text": "Kontrak rute 4 diputus." },
+          { "time": "Kamis", "text": "Tiga paket rute 4 dialihkan ke kurir lain." },
+          { "time": "Jumat 19.50", "text": "Kardus cokelat diletakkan di dekat rak 2." }
+        ]
+      },
+      "solution_order": {
+        "v_rani": ["Rabu", "Kamis 20.10", "Jumat 18.20"],
+        "v_bowo": ["Bulan lalu", "Kamis", "Jumat 19.50"]
+      }
+    }
+  },
+  "case_recap_text": {
+    "note": "Teks Case Recap dipakai bersama kedua varian; angka diisi runtime dari telemetri, bukan dikarang.",
+    "lines": [
+      "Searcher memeriksa {jumlah_objek} benda dan mengirim {jumlah_laporan} laporan.",
+      "Handler merakit {jumlah_bukti} bukti dengan {jumlah_hint} hint.",
+      "Director menyusun {jumlah_deduksi} deduksi dan menandai {jumlah_kontradiksi} kontradiksi.",
+      "Tuduhan benar pada percobaan ke-{percobaan}."
+    ]
+  }
+}
